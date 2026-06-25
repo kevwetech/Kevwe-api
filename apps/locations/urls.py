@@ -12,6 +12,7 @@ from .views import (
     AddressDetailView,
     SetDefaultAddressView,
     LocationHierarchyView,
+    NearbyBusinessesView,
 )
 
 urlpatterns = [
@@ -25,7 +26,8 @@ urlpatterns = [
     # States
     path('states/', StateListCreateView.as_view(), name='states'),
     path('states/<int:pk>/', StateDetailView.as_view(), name='state_detail'),
-
+    path('discover/', NearbyBusinessesView.as_view(), name='nearby_businesses'),
+    
     # Cities
     path('cities/', CityListCreateView.as_view(), name='cities'),
     path('cities/<int:pk>/', CityDetailView.as_view(), name='city_detail'),
@@ -38,4 +40,5 @@ urlpatterns = [
     path('addresses/', AddressListCreateView.as_view(), name='addresses'),
     path('addresses/<int:pk>/', AddressDetailView.as_view(), name='address_detail'),
     path('addresses/<int:pk>/set-default/', SetDefaultAddressView.as_view(), name='set_default_address'),
+    
 ]

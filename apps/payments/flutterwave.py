@@ -135,3 +135,106 @@ def get_banks():
             'status': 'error',
             'message': str(e)
         }
+
+def create_transfer_recipient(
+    account_name,
+    account_number,
+    bank_code,
+    currency='NGN'
+):
+    """
+    Create a transfer beneficiary on Flutterwave
+    Returns beneficiary id used for transfers
+    """
+    payload = {
+        'account_number': account_number,
+        'account_bank': bank_code,
+        'beneficiary_name': account_name,
+        'currency': currency,
+    }
+    try:
+        response = requests.post(
+            f'{FLUTTERWAVE_BASE_URL}/beneficiaries',
+            json=payload,
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
+
+
+def initiate_transfer(
+    amount,
+    account_number,
+    bank_code,
+    account_name,
+    reference,
+    narration='Vendor withdrawal',
+    currency='NGN'
+):
+    """
+    Initiate a transfer to a bank account
+    Amount in Naira
+    """
+    payload = {
+        'account_bank': bank_code,
+        'account_number': account_number,
+        'amount': float(amount),
+        'narration': narration,
+        'currency': currency,
+        'reference': reference,
+        'beneficiary_name': account_name,
+        'callback_url': '',
+        'debit_currency': 'NGN',
+    }
+    try:
+        response = requests.post(
+            f'{FLUTTERWAVE_BASE_URL}/transfers',
+            json=payload,
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
+
+
+def verify_transfer(reference):
+    """Verify transfer status by reference"""
+    try:
+        response = requests.get(
+            f'{FLUTTERWAVE_BASE_URL}/transfers?reference={reference}',
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
+
+
+def get_transfer_fee(amount, currency='NGN'):
+    """Get transfer fee for given amount"""
+    try:
+        response = requests.get(
+            f'{FLUTTERWAVE_BASE_URL}/transfers/fee'
+            f'?amount={amount}&currency={currency}',
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}
+
+
+def verify_account(account_number, bank_code):
+    """Verify a bank account number"""
+    payload = {
+        'account_number': account_number,
+        'account_bank': bank_code,
+    }
+    try:
+        response = requests.post(
+            f'{FLUTTERWAVE_BASE_URL}/accounts/resolve',
+            json=payload,
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': 'error', 'message': str(e)}

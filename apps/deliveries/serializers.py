@@ -39,21 +39,21 @@ class DeliveryRequestSerializer(serializers.ModelSerializer):
         read_only=True
     )
     dispatcher_name = serializers.CharField(
-        source='dispatcher.user.full_name',
+        source='driver.user.full_name',
         read_only=True
     )
     dispatcher_phone = serializers.CharField(
-        source='dispatcher.user.phone',
+        source='driver.user.phone',
         read_only=True
     )
     dispatcher_lat = serializers.DecimalField(
-        source='dispatcher.current_lat',
+        source='driver.current_lat',
         max_digits=9,
         decimal_places=6,
         read_only=True
     )
     dispatcher_lng = serializers.DecimalField(
-        source='dispatcher.current_lng',
+        source='driver.current_lng',
         max_digits=9,
         decimal_places=6,
         read_only=True
@@ -62,8 +62,14 @@ class DeliveryRequestSerializer(serializers.ModelSerializer):
         default='marketplace',
         required=False
     )
-    
-    payment_method = serializers.CharField(default='wallet',      required=False)
+    payment_method = serializers.CharField(
+        default='wallet',
+        required=False
+    )
+    order_number = serializers.CharField(
+        source='order.order_number',
+        read_only=True
+    )
 
     class Meta:
         model = DeliveryRequest
@@ -71,8 +77,12 @@ class DeliveryRequestSerializer(serializers.ModelSerializer):
             'id',
             'reference',
             'tracking_number',
+            'order',
+            'order_number',
             'status',
             'payment_status',
+            'payment_model',
+            'payment_method',
             'package_name',
             'package_description',
             'package_size',
@@ -114,6 +124,7 @@ class DeliveryRequestSerializer(serializers.ModelSerializer):
             'id',
             'reference',
             'tracking_number',
+            'order',
             'status',
             'price',
             'picked_up_at',

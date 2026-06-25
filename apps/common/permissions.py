@@ -25,6 +25,31 @@ class IsAdminOrReadOnly(BasePermission):
             request.user.role == 'admin'
         )
 
+class IsCustomer(BasePermission):
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated
+        )
+
+class IsVendor(BasePermission):
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated and
+            request.user.role in ['vendor', 'admin']
+        )
+
+class IsDriver(BasePermission):
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated and
+            request.user.role in ['driver', 'admin']
+        )
+        
+
+
 
 class IsOwnerOrAdmin(BasePermission):
     """

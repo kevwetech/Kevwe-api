@@ -3,6 +3,8 @@ from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail, Email, To, Content
 from django.conf import settings
 import logging
+from urllib.parse import quote
+
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +69,24 @@ def send_otp_email(to_email, otp, otp_type, name=None):
             </div>
         </div>
         """
+    elif otp_type == 'delivery_confirmation':
+        subject = 'Your Delivery Confirmation Code'
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <div style="background: #FF6600; padding: 20px; text-align: center;">
+                <h1 style="color: white; margin: 0;">Delivery Confirmation</h1>
+            </div>
+            <div style="padding: 30px; background: #f9f9f9;">
+                <h2>Hi {name or 'there'}!</h2>
+                <p>Your driver has arrived. Give them this code to confirm delivery:</p>
+                <div style="background: #fff; border: 2px solid #FF6600; border-radius: 8px; padding: 20px; text-align: center; margin: 20px 0;">
+                    <h1 style="color: #FF6600; font-size: 48px; margin: 0; letter-spacing: 10px;">{otp}</h1>
+                </div>
+                <p>This code expires in <strong>15 minutes.</strong></p>
+                <p style="color: #999; font-size: 12px;">Do not share this code with anyone other than your delivery driver.</p>
+            </div>
+        </div>
+        """
     else:
         subject = 'Password Reset Code'
         html_content = f"""
@@ -85,7 +105,6 @@ def send_otp_email(to_email, otp, otp_type, name=None):
             </div>
         </div>
         """
-
     return send_email(to_email, subject, html_content)
 
 
@@ -241,3 +260,101 @@ def send_ride_confirmation_email(ride):
     """
 
     return send_email(ride.rider.email, subject, html_content)
+
+
+def send_booking_checkin_email(booking):
+    """
+    Send check-in code + directions to customer after
+    a hotel/exclusive booking is confirmed and paid.
+    """
+    business = booking.business
+    item = booking.item
+
+    
+    frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
+
+    # Build deep link to app's own map page
+    maps_link = None
+    if business and business.latitude and business.longitude:
+        maps_link = (
+            f"{frontend_url}/map"
+            f"?lat={business.latitude}"
+            f"&lng={business.longitude}"
+            f"&name={quote(str(business.name))}"
+            f"&address={quote(str(business.address or ''))}"
+        )
+    elif business and business.address:
+        maps_link = (
+            f"{frontend_url}/map"
+            f"?name={quote(str(business.name))}"
+            f"&address={quote(str(business.address or ''))}"
+        )
+
+    maps_button = (
+        f'<a href="{maps_link}" style="display:inline-block;'
+        f'background:#4CAF50;color:white;padding:12px 24px;'
+        f'border-radius:6px;text-decoration:none;font-weight:bold;'
+        f'margin:10px 0;">📍 View on Map</a>'
+        if maps_link else ''
+    )
+
+
+    subject = f'Your Booking Confirmation – {item.name}'
+    html_content = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #1a1a2e; padding: 20px; text-align: center;">
+            <h1 style="color: white; margin: 0;">Booking Confirmed ✅</h1>
+        </div>
+        <div style="padding: 30px; background: #f9f9f9;">
+            <h2>Hi {booking.guest_name or 'there'}!</h2>
+            <p>Your booking has been confirmed and paid. Here are your details:</p>
+
+            <div style="background: #fff; border-radius: 8px; padding: 20px; margin: 20px 0; border-left: 4px solid #1a1a2e;">
+                <table style="width:100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding:8px 0; color:#666;">Property</td>
+                        <td style="padding:8px 0; font-weight:bold;">{item.name}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0; color:#666;">Booking No.</td>
+                        <td style="padding:8px 0; font-weight:bold;">{booking.booking_number}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0; color:#666;">Check-in</td>
+                        <td style="padding:8px 0; font-weight:bold;">{booking.check_in} {booking.check_in_time or ''}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0; color:#666;">Check-out</td>
+                        <td style="padding:8px 0; font-weight:bold;">{booking.check_out}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0; color:#666;">Guests</td>
+                        <td style="padding:8px 0; font-weight:bold;">{booking.guests}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:8px 0; color:#666;">Address</td>
+                        <td style="padding:8px 0; font-weight:bold;">{business.address if business else 'See hotel details'}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <p style="text-align:center; margin: 20px 0;">
+                <strong>Your Check-in Code:</strong>
+            </p>
+            <div style="background:#fff; border: 2px solid #1a1a2e; border-radius:8px; padding:20px; text-align:center; margin:10px 0;">
+                <h1 style="color:#1a1a2e; font-size:42px; margin:0; letter-spacing:10px;">{booking.checkin_code}</h1>
+                <p style="color:#666; margin:10px 0 0;">Show this code at the front desk to check in</p>
+            </div>
+
+            <div style="text-align:center; margin: 24px 0;">
+                {maps_button}
+            </div>
+
+            <p style="color:#999; font-size:12px;">
+                If you need to cancel or modify your booking, please contact us
+                at least {item.cancellation_hours} hours before check-in.
+            </p>
+        </div>
+    </div>
+    """
+    return send_email(booking.guest_email, subject, html_content)

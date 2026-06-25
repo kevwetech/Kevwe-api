@@ -290,6 +290,20 @@ class UpdateLocationView(APIView):
             driver.last_location_update = timezone.now()
             driver.save()
 
+            # Check if driver has arrived at any pickup point
+            try:
+                from apps.deliveries.utils import check_pickup_arrival
+                check_pickup_arrival(driver)
+            except Exception as e:
+                print(f"Pickup arrival check error: {e}")
+
+            # Check if driver is approaching/arrived at dropoff
+            try:
+                from apps.deliveries.utils import check_dropoff_proximity
+                check_dropoff_proximity(driver)
+            except Exception as e:
+                print(f"Dropoff proximity check error: {e}")
+
             return api_response(
                 'success',
                 'Location updated successfully',
@@ -306,7 +320,6 @@ class UpdateLocationView(APIView):
             errors=serializer.errors,
             http_status=status.HTTP_400_BAD_REQUEST
         )
-
 
 
 class VehicleListCreateView(APIView):

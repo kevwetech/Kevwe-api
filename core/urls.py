@@ -31,7 +31,7 @@ urlpatterns = [
     path('api/v1/auth/', include('apps.authentication.urls')),
     path('api/v1/users/', include('apps.users.urls')),
     path('api/v1/products/', include('apps.products.urls')),
-    path('api/v1/', include('apps.reviews.urls')),
+    path('api/v1/reviews/', include('apps.reviews.urls')),
     path('api/v1/wishlist/', include('apps.wishlist.urls')),
     path('api/v1/orders/', include('apps.orders.urls')),
     path('api/v1/bookings/', include('apps.bookings.urls')),
@@ -48,6 +48,11 @@ urlpatterns = [
     path('api/v1/operations/', include('apps.operations.urls')),
     path('api/v1/cms/', include('apps.cms.urls')),
     path('api/v1/tenants/', include('apps.tenancy.urls')),
+    path('api/v1/marketplace/', include('apps.marketplace.urls')),
+    path('api/v1/catalog/', include('apps.catalog.urls')),
+    path('api/v1/commissions/', include('apps.commissions.urls')),
+    path('api/v1/analytics/', include('apps.analytics.urls')),
+    path('api/v1/currencies/', include('apps.currencies.urls')),
 
     # API Docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

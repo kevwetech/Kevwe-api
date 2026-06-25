@@ -116,3 +116,86 @@ def verify_account(account_number, bank_code):
             'status': False,
             'message': str(e)
         }
+
+
+def create_transfer_recipient(
+    account_name,
+    account_number,
+    bank_code,
+    currency='NGN'
+):
+    """
+    Create a transfer recipient on Paystack
+    Must be done before initiating transfer
+    Returns recipient_code used for transfers
+    """
+    payload = {
+        'type': 'nuban',
+        'name': account_name,
+        'account_number': account_number,
+        'bank_code': bank_code,
+        'currency': currency,
+    }
+    try:
+        response = requests.post(
+            f'{PAYSTACK_BASE_URL}/transferrecipient',
+            json=payload,
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': False, 'message': str(e)}
+
+
+def initiate_transfer(
+    amount,
+    recipient_code,
+    reference,
+    reason='Vendor withdrawal'
+):
+    """
+    Initiate a transfer to a recipient
+    Amount in Naira — converted to kobo
+    """
+    amount_kobo = int(Decimal(str(amount)) * 100)
+
+    payload = {
+        'source': 'balance',
+        'amount': amount_kobo,
+        'recipient': recipient_code,
+        'reference': reference,
+        'reason': reason,
+    }
+    try:
+        response = requests.post(
+            f'{PAYSTACK_BASE_URL}/transfer',
+            json=payload,
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': False, 'message': str(e)}
+
+
+def verify_transfer(reference):
+    """Verify transfer status"""
+    try:
+        response = requests.get(
+            f'{PAYSTACK_BASE_URL}/transfer/{reference}',
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': False, 'message': str(e)}
+
+
+def get_transfer_recipient(recipient_code):
+    """Get transfer recipient details"""
+    try:
+        response = requests.get(
+            f'{PAYSTACK_BASE_URL}/transferrecipient/{recipient_code}',
+            headers=get_headers()
+        )
+        return response.json()
+    except Exception as e:
+        return {'status': False, 'message': str(e)}

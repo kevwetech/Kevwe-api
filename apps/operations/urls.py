@@ -22,6 +22,7 @@ from .views import (
     MaintenanceRecordDetailView,
     BranchManagerListCreateView,
     BranchManagerDetailView,
+    BranchDashboardView 
 )
 
 urlpatterns = [
@@ -35,6 +36,7 @@ urlpatterns = [
     # Branch Managers
     path('managers/', BranchManagerListCreateView.as_view(), name='branch_managers'),
     path('managers/<int:pk>/', BranchManagerDetailView.as_view(), name='branch_manager_detail'),
+    path('branches/<int:pk>/dashboard/', BranchDashboardView.as_view(), name='branch_dashboard'),
 
     # Territories
     path('territories/', TerritoryListCreateView.as_view(), name='territories'),

@@ -6,7 +6,7 @@ from .models import Country, State, City, Zone, Address
 class CountryAdmin(admin.ModelAdmin):
     list_display = (
         'name', 'code', 'phone_code',
-        'currency', 'is_active'
+        'currency_code', 'is_active'
     )
     list_filter = ('is_active',)
     search_fields = ('name', 'code')

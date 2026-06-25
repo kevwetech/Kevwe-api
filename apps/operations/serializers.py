@@ -13,6 +13,10 @@ from .models import (
 )
 
 class BranchSerializer(serializers.ModelSerializer):
+    business_name = serializers.CharField(
+        source='business.name',
+        read_only=True
+    )
     manager_name = serializers.CharField(
         source='manager.full_name',
         read_only=True
@@ -36,6 +40,8 @@ class BranchSerializer(serializers.ModelSerializer):
         model = Branch
         fields = (
             'id',
+            'business',
+            'business_name',
             'name',
             'code',
             'branch_type',

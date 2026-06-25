@@ -7,8 +7,19 @@ class Country(TimeStampedModel):
     name = models.CharField(max_length=100, unique=True)
     code = models.CharField(max_length=3, unique=True)  # e.g NG, US, GH
     phone_code = models.CharField(max_length=10, blank=True)  # e.g +234
-    currency = models.CharField(max_length=10, blank=True)  # e.g NGN
-    currency_symbol = models.CharField(max_length=5, blank=True)  # e.g ₦
+    currency_code = models.CharField(
+        max_length=10, blank=True
+    )  # legacy/fallback e.g NGN
+    currency_symbol = models.CharField(
+        max_length=5, blank=True
+    )  # legacy/fallback e.g ₦
+    default_currency = models.ForeignKey(
+        'currencies.Currency',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='countries'
+    )
     flag = models.ImageField(
         upload_to='country_flags/',
         null=True,
@@ -49,8 +60,15 @@ class City(TimeStampedModel):
         related_name='cities'
     )
     name = models.CharField(max_length=100)
+    latitude = models.DecimalField(
+        max_digits=9, decimal_places=6,
+        null=True, blank=True
+    )
+    longitude = models.DecimalField(
+        max_digits=9, decimal_places=6,
+        null=True, blank=True
+    )
     is_active = models.BooleanField(default=True)
-
     class Meta:
         ordering = ['name']
         unique_together = ('state', 'name')

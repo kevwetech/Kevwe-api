@@ -22,6 +22,13 @@ class Branch(TimeStampedModel):
         ('inactive', 'Inactive'),
         ('maintenance', 'Under Maintenance'),
     )
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='branches'
+    )
 
     name = models.CharField(max_length=255)
     code = models.CharField(max_length=20, unique=True)

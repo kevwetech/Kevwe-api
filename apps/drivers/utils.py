@@ -3,6 +3,7 @@ from .models import DriverProfile
 
 
 
+
 def calculate_distance(lat1, lng1, lat2, lng2):
     """
     Calculate distance between two coordinates

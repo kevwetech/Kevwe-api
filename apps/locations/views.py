@@ -11,6 +11,8 @@ from .serializers import (
     ZoneSerializer,
     AddressSerializer,
 )
+from apps.marketplace.models import Business
+from apps.drivers.utils import calculate_distance
 
 
 # ─── Country Views ───────────────────────────────
@@ -673,3 +675,172 @@ class LocationHierarchyView(APIView):
                 'Countries retrieved',
                 data=CountrySerializer(countries, many=True).data
             )
+
+class NearbyBusinessesView(APIView):
+    """
+    Discover businesses in a city.
+    GPS coordinates auto-detect the city.
+    Manual city_id as fallback.
+    Filterable by industry and search term.
+
+    GET /api/v1/locations/discover/
+        ?lat=5.8904&lng=5.6801      (GPS)
+        ?city_id=1                   (manual)
+        &industry_id=1               (optional filter)
+        &search=pizza                (optional search)
+    """
+    permission_classes = []
+
+    def get(self, request):
+        from apps.marketplace.models import Business, Industry
+        from apps.drivers.utils import calculate_distance
+
+        lat = request.query_params.get('lat')
+        lng = request.query_params.get('lng')
+        city_id = request.query_params.get('city_id')
+        industry_id = request.query_params.get('industry_id')
+        search = request.query_params.get('search', '').strip()
+
+        detected_city = None
+        detected_city_name = None
+
+        # ── GPS: find closest city ──
+        if lat and lng:
+            try:
+                lat_f = float(lat)
+                lng_f = float(lng)
+                cities = City.objects.filter(
+                    latitude__isnull=False,
+                    longitude__isnull=False,
+                )
+                closest = None
+                closest_dist = float('inf')
+
+                for city in cities:
+                    dist = calculate_distance(
+                        lat_f, lng_f,
+                        float(city.latitude),
+                        float(city.longitude),
+                    )
+                    if dist < closest_dist:
+                        closest_dist = dist
+                        closest = city
+
+                if closest:
+                    detected_city = closest
+                    detected_city_name = closest.name
+
+            except Exception as e:
+                print(f"GPS city detection error: {e}")
+
+        # ── Manual fallback ──
+        if not detected_city and city_id:
+            try:
+                detected_city = City.objects.get(pk=city_id)
+                detected_city_name = detected_city.name
+            except City.DoesNotExist:
+                return api_response(
+                    'error',
+                    'City not found',
+                    http_status=status.HTTP_404_NOT_FOUND
+                )
+
+        if not detected_city:
+            return api_response(
+                'error',
+                'Please provide lat/lng or city_id',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ── Query businesses in detected city ──
+        businesses = Business.objects.filter(
+            city=detected_city,
+            is_active=True,
+            is_verified=True,
+        )
+
+        if industry_id:
+            businesses = businesses.filter(
+                industry__id=industry_id
+            )
+
+        if search:
+            businesses = businesses.filter(
+                name__icontains=search
+            )
+
+        businesses = businesses.order_by('-rating', 'name')
+
+        # ── Build response ──
+        results = []
+        for biz in businesses:
+            dist_km = None
+            if lat and lng:
+                try:
+                    dist_km = round(calculate_distance(
+                        float(lat), float(lng),
+                        float(biz.latitude),
+                        float(biz.longitude),
+                    ), 2) if biz.latitude and biz.longitude else None
+                except Exception:
+                    pass
+
+            results.append({
+                'id': biz.id,
+                'name': biz.name,
+                'slug': biz.slug,
+                'logo': (
+                    request.build_absolute_uri(biz.logo.url)
+                    if biz.logo else None
+                ),
+                'cover_image': (
+                    request.build_absolute_uri(biz.cover_image.url)
+                    if biz.cover_image else None
+                ),
+                'industry': biz.industry.name,
+                'industry_id': biz.industry.id,
+                'address': biz.address,
+                'city': detected_city_name,
+                'rating': str(biz.rating),
+                'total_ratings': biz.total_ratings,
+                'distance_km': dist_km,
+                'is_open': getattr(biz, 'is_open', None),
+                'phone': biz.phone,
+            })
+
+        # Sort by distance if GPS was provided
+        if lat and lng:
+            results.sort(
+                key=lambda x: x['distance_km']
+                if x['distance_km'] is not None
+                else float('inf')
+            )
+
+        # Get available industries in this city for filter UI
+        industries_in_city = Industry.objects.filter(
+            businesses__city=detected_city,
+            businesses__is_active=True,
+        ).distinct().values('id', 'name', 'slug')
+
+        return api_response(
+            'success',
+            f'Found {len(results)} businesses in '
+            f'{detected_city_name}',
+            data={
+                'detected_city': {
+                    'id': detected_city.id,
+                    'name': detected_city_name,
+                    'state': detected_city.state.name
+                    if detected_city.state else None,
+                },
+                'filters_applied': {
+                    'industry_id': industry_id,
+                    'search': search or None,
+                },
+                'available_industries': list(
+                    industries_in_city
+                ),
+                'count': len(results),
+                'results': results,
+            }
+        )

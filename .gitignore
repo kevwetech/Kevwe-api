@@ -1,4 +1,4 @@
 
 
 
-.env
+.env`n# Python`n__pycache__/`n*.py[cod]`n*.pyo`n*.pyc`n`n# Virtual env`nkess/`nvenv/`nenv/`n`n# Django`n*.log`ndb.sqlite3`n`n# OS`n.DS_Store`nThumbs.db`n`n# Test files`ntest_*.py

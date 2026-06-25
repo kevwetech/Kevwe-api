@@ -53,6 +53,11 @@ INSTALLED_APPS = [
     'apps.operations',
     'apps.cms',
     'apps.tenancy',
+    'apps.marketplace',
+    'apps.catalog',
+    'apps.commissions',
+    'apps.analytics',
+    'apps.currencies',
 ]
 
 MIDDLEWARE = [

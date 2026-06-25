@@ -5,6 +5,10 @@ from django.utils import timezone
 from apps.common.views import api_response
 from apps.common.permissions import IsAdmin
 from apps.common.utils import generate_reference
+from django.utils import timezone
+from datetime import timedelta
+from django.db.models import Sum, Count, Q
+
 from .models import (
     Branch, Territory, Fleet, FleetVehicle, Dispatch,
     MaintenanceType, MaintenanceRecord, BranchManager,
@@ -28,18 +32,19 @@ class BranchListCreateView(APIView):
 
     def get(self, request):
         branches = Branch.objects.filter(is_active=True)
-
         branch_type = request.query_params.get('type')
         state_id = request.query_params.get('state')
+        business_id = request.query_params.get('business_id')
         search = request.query_params.get('search')
-
         if branch_type:
             branches = branches.filter(branch_type=branch_type)
         if state_id:
             branches = branches.filter(state__id=state_id)
+        if business_id:
+            branches = branches.filter(business__id=business_id)
         if search:
             branches = branches.filter(name__icontains=search)
-
+            
         serializer = BranchSerializer(branches, many=True)
         return api_response(
             'success',
@@ -1454,4 +1459,238 @@ class BranchManagerDetailView(APIView):
         return api_response(
             'success',
             'Branch manager deactivated successfully'
+        )
+
+class BranchDashboardView(APIView):
+    """
+    Per-branch performance dashboard with time period filtering.
+    GET /api/v1/operations/branches/<pk>/dashboard/
+        ?period=today|this_week|this_month (default: this_month)
+    """
+    permission_classes = [IsAdmin]
+
+    def get(self, request, pk):
+        try:
+            branch = Branch.objects.get(pk=pk)
+        except Branch.DoesNotExist:
+            return api_response(
+                'error', 'Branch not found',
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+
+        # ── Period filter ──
+        period = request.query_params.get('period', 'this_month')
+        now = timezone.now()
+
+        if period == 'today':
+            period_start = now.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            period_label = 'Today'
+        elif period == 'this_week':
+            period_start = now - timedelta(days=now.weekday())
+            period_start = period_start.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            period_label = 'This Week'
+        else:  # this_month
+            period_start = now.replace(
+                day=1, hour=0, minute=0,
+                second=0, microsecond=0
+            )
+            period_label = 'This Month'
+
+        # ── Base dispatch queryset for this branch ──
+        dispatches = Dispatch.objects.filter(branch=branch)
+        period_dispatches = dispatches.filter(
+            created_at__gte=period_start
+        )
+
+        # ── Deliveries ──
+        delivery_dispatches = period_dispatches.filter(
+            dispatch_type='delivery'
+        )
+        deliveries_total = delivery_dispatches.count()
+        deliveries_completed = delivery_dispatches.filter(
+            status='delivered'
+        ).count()
+        deliveries_failed = delivery_dispatches.filter(
+            status='failed'
+        ).count()
+        deliveries_pending = delivery_dispatches.filter(
+            status='pending'
+        ).count()
+        deliveries_in_progress = delivery_dispatches.filter(
+            status__in=[
+                'assigned', 'en_route_pickup',
+                'at_pickup', 'picked_up',
+                'en_route_delivery', 'at_delivery',
+            ]
+        ).count()
+
+        # ── Shipments ──
+        shipment_dispatches = period_dispatches.filter(
+            dispatch_type='shipment'
+        )
+        shipments_total = shipment_dispatches.count()
+        shipments_completed = shipment_dispatches.filter(
+            status='delivered'
+        ).count()
+        shipments_failed = shipment_dispatches.filter(
+            status='failed'
+        ).count()
+        shipments_pending = shipment_dispatches.filter(
+            status='pending'
+        ).count()
+
+        # ── Revenue (from linked delivery fees) ──
+        delivery_ids = delivery_dispatches.filter(
+            status='delivered',
+            delivery__isnull=False
+        ).values_list('delivery_id', flat=True)
+
+        from apps.deliveries.models import DeliveryRequest
+        revenue = DeliveryRequest.objects.filter(
+            id__in=delivery_ids
+        ).aggregate(
+            total=Sum('price')
+        )['total'] or 0
+
+        # ── Drivers ──
+        branch_drivers = dispatches.filter(
+            driver__isnull=False
+        ).values_list(
+            'driver_id', flat=True
+        ).distinct()
+        total_drivers = branch_drivers.count()
+
+        active_today = dispatches.filter(
+            created_at__gte=now.replace(
+                hour=0, minute=0, second=0, microsecond=0
+            ),
+            driver__isnull=False,
+            status__in=[
+                'assigned', 'en_route_pickup',
+                'at_pickup', 'picked_up',
+                'en_route_delivery', 'at_delivery',
+            ]
+        ).values('driver_id').distinct().count()
+
+        # Top performer — driver with most completed deliveries
+        from django.db.models import Count as DCount
+        top_driver_data = period_dispatches.filter(
+            status='delivered',
+            driver__isnull=False
+        ).values(
+            'driver__id',
+            'driver__user__full_name',
+        ).annotate(
+            completed=DCount('id')
+        ).order_by('-completed').first()
+
+        top_driver = None
+        if top_driver_data:
+            top_driver = {
+                'driver_id': top_driver_data['driver__id'],
+                'name': top_driver_data['driver__user__full_name'],
+                'completed_deliveries': top_driver_data['completed'],
+            }
+
+        # ── Fleet ──
+        fleet_vehicles = FleetVehicle.objects.filter(
+            fleet__branch=branch
+        )
+        vehicles_total = fleet_vehicles.count()
+        vehicles_available = fleet_vehicles.filter(
+            status='available'
+        ).count()
+        vehicles_on_trip = fleet_vehicles.filter(
+            status='on_trip'
+        ).count()
+        vehicles_maintenance = fleet_vehicles.filter(
+            status='maintenance'
+        ).count()
+
+        # ── Dispatch status breakdown ──
+        dispatch_breakdown = {}
+        for s, _ in Dispatch.STATUS_CHOICES:
+            dispatch_breakdown[s] = period_dispatches.filter(
+                status=s
+            ).count()
+
+        return api_response(
+            'success',
+            f'Branch dashboard for {branch.name}',
+            data={
+                'branch': {
+                    'id': branch.id,
+                    'name': branch.name,
+                    'code': branch.code,
+                    'type': branch.branch_type,
+                    'status': branch.status,
+                    'city': (
+                        branch.city.name
+                        if branch.city else None
+                    ),
+                    'state': (
+                        branch.state.name
+                        if branch.state else None
+                    ),
+                    'manager': (
+                        branch.manager.full_name
+                        if branch.manager else None
+                    ),
+                    'business': {
+                        'id': branch.business.id,
+                        'name': branch.business.name,
+                        'industry': branch.business.industry.name,
+                    } if branch.business else None,
+                
+                    'manager': (
+                        branch.manager.get_full_name()
+                        if branch.manager else None
+                    ),
+                },
+                'period': {
+                    'label': period_label,
+                    'from': period_start.isoformat(),
+                    'to': now.isoformat(),
+                },
+                'deliveries': {
+                    'total': deliveries_total,
+                    'completed': deliveries_completed,
+                    'failed': deliveries_failed,
+                    'pending': deliveries_pending,
+                    'in_progress': deliveries_in_progress,
+                    'completion_rate': (
+                        round(
+                            deliveries_completed
+                            / deliveries_total * 100, 1
+                        )
+                        if deliveries_total else 0
+                    ),
+                },
+                'shipments': {
+                    'total': shipments_total,
+                    'completed': shipments_completed,
+                    'failed': shipments_failed,
+                    'pending': shipments_pending,
+                },
+                'revenue': {
+                    'total': str(revenue),
+                    'currency': 'NGN',
+                },
+                'drivers': {
+                    'total_assigned': total_drivers,
+                    'active_today': active_today,
+                    'top_performer': top_driver,
+                },
+                'fleet': {
+                    'total_vehicles': vehicles_total,
+                    'available': vehicles_available,
+                    'on_trip': vehicles_on_trip,
+                    'under_maintenance': vehicles_maintenance,
+                },
+                'dispatch_breakdown': dispatch_breakdown,
+            }
         )

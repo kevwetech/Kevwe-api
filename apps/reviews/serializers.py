@@ -1,61 +1,133 @@
 from rest_framework import serializers
-from django.contrib.auth import get_user_model
-from .models import Review
-
-User = get_user_model()
-
-
-class ReviewerSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ('id', 'full_name', 'avatar')
+from .models import Review, ReviewHelpfulness, ReviewReport
 
 
 class ReviewSerializer(serializers.ModelSerializer):
-    user = ReviewerSerializer(read_only=True)
-    rating_display = serializers.SerializerMethodField()
+    user_name = serializers.CharField(
+        source='user.full_name',
+        read_only=True
+    )
+    user_avatar = serializers.ImageField(
+        source='user.avatar',
+        read_only=True
+    )
+    replied_by_name = serializers.CharField(
+        source='replied_by.full_name',
+        read_only=True
+    )
+    average_sub_rating = serializers.FloatField(read_only=True)
 
     class Meta:
         model = Review
         fields = (
             'id',
             'user',
-            'product_id',
-            'product_type',
+            'user_name',
+            'user_avatar',
+            'objects_id',
+            'objects_type',
             'rating',
-            'rating_display',
             'title',
             'comment',
+            'food_rating',
+            'delivery_rating',
+            'service_rating',
+            'value_rating',
+            'average_sub_rating',
+            'images',
+            'order',
             'is_verified',
+            'reply',
+            'replied_by',
+            'replied_by_name',
+            'replied_at',
+            'status',
+            'is_featured',
+            'helpful_count',
+            'not_helpful_count',
             'created_at',
-            'updated_at',
         )
         read_only_fields = (
             'id',
             'user',
-            'product_id',
-            'product_type',
             'is_verified',
+            'reply',
+            'replied_by',
+            'replied_at',
+            'status',
+            'helpful_count',
+            'not_helpful_count',
+            'average_sub_rating',
             'created_at',
-            'updated_at',
         )
 
-    def get_rating_display(self, obj):
-        return '★' * obj.rating + '☆' * (5 - obj.rating)
+
+class CreateReviewSerializer(serializers.Serializer):
+    objects_id = serializers.IntegerField()
+    objects_type = serializers.ChoiceField(
+        choices=[
+            'product', 'business', 'driver',
+            'order', 'delivery', 'ride', 'booking'
+        ]
+    )
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    title = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+    comment = serializers.CharField(
+        required=False,
+        allow_blank=True
+    )
+    food_rating = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=5
+    )
+    delivery_rating = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=5
+    )
+    service_rating = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=5
+    )
+    value_rating = serializers.IntegerField(
+        required=False,
+        min_value=1,
+        max_value=5
+    )
+    order_id = serializers.IntegerField(required=False)
 
 
-class CreateReviewSerializer(serializers.ModelSerializer):
+class ReplyReviewSerializer(serializers.Serializer):
+    reply = serializers.CharField()
+
+
+class ReviewHelpfulnessSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Review
-        fields = (
-            'rating',
-            'title',
-            'comment',
-        )
+        model = ReviewHelpfulness
+        fields = ('id', 'review', 'user', 'is_helpful', 'created_at')
+        read_only_fields = ('id', 'user', 'created_at')
 
-    def validate_rating(self, value):
-        if value < 1 or value > 5:
-            raise serializers.ValidationError(
-                'Rating must be between 1 and 5'
-            )
-        return value
+
+class ReviewReportSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReviewReport
+        fields = (
+            'id',
+            'review',
+            'reported_by',
+            'reason',
+            'description',
+            'is_resolved',
+            'created_at',
+        )
+        read_only_fields = (
+            'id',
+            'reported_by',
+            'is_resolved',
+            'created_at',
+        )

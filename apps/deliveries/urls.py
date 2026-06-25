@@ -9,6 +9,8 @@ from .views import (
     UploadDeliveryProofView,
     AdminDeliveryListView,
     AdminDeliveryUpdateView,
+    ConfirmDeliveryView,
+    ResendDeliveryOTPView,
 )
 
 urlpatterns = [
@@ -31,4 +33,7 @@ urlpatterns = [
     # Admin endpoints
     path('admin/', AdminDeliveryListView.as_view(), name='admin_deliveries'),
     path('admin/<int:pk>/', AdminDeliveryUpdateView.as_view(), name='admin_delivery_update'),
+
+    path('<int:pk>/confirm/', ConfirmDeliveryView.as_view(), name='confirm_delivery'),
+    path('<int:pk>/resend-otp/', ResendDeliveryOTPView.as_view(), name='resend_delivery_otp'),
 ]

@@ -812,3 +812,185 @@ class AdminDeliveryUpdateView(APIView):
             'success', 'Delivery updated successfully',
             data=DeliveryRequestSerializer(delivery).data,
         )
+
+class ConfirmDeliveryView(APIView):
+    """
+    Driver submits the OTP given by customer to confirm delivery.
+    POST /api/v1/deliveries/<pk>/confirm/
+    Body: { "otp": "123456" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.utils import timezone
+        from apps.notifications.utils import send_notification
+
+        try:
+            delivery = DeliveryRequest.objects.get(pk=pk)
+        except DeliveryRequest.DoesNotExist:
+            return api_response(
+                'error', 'Delivery not found',
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Only the assigned driver can confirm
+        if (
+            not hasattr(request.user, 'driver_profile')
+            or delivery.driver != request.user.driver_profile
+        ):
+            return api_response(
+                'error',
+                'Only the assigned driver can confirm delivery',
+                http_status=status.HTTP_403_FORBIDDEN
+            )
+
+        if delivery.status == 'delivered':
+            return api_response(
+                'error', 'Delivery already confirmed',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if delivery.status not in ['at_dropoff', 'in_transit']:
+            return api_response(
+                'error',
+                f'Cannot confirm delivery with status: '
+                f'{delivery.status}',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        otp = request.data.get('otp', '').strip()
+
+        if not otp:
+            return api_response(
+                'error', 'OTP is required',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if not delivery.delivery_otp:
+            return api_response(
+                'error',
+                'No OTP was generated for this delivery. '
+                'Request a new one.',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check expiry
+        if (
+            delivery.delivery_otp_expires_at
+            and timezone.now() > delivery.delivery_otp_expires_at
+        ):
+            return api_response(
+                'error',
+                'OTP has expired. A new one will be sent.',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Check OTP match
+        if otp != delivery.delivery_otp:
+            return api_response(
+                'error', 'Invalid OTP',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Confirm delivery
+        now = timezone.now()
+        delivery.status = 'delivered'
+        delivery.delivered_at = now
+        delivery.delivery_otp_verified = True
+        delivery.delivery_otp = None  # clear OTP after use
+        delivery.save()
+
+        # Create tracking entry
+        DeliveryTracking.objects.create(
+            delivery=delivery,
+            status='delivered',
+            description='Delivery confirmed via OTP',
+            updated_by=request.user,
+        )
+
+        # Sync order status
+        if delivery.order:
+            delivery.order.status = 'delivered'
+            delivery.order.delivered_at = now
+            delivery.order.save()
+
+        # Notify customer
+        send_notification(
+            user=delivery.customer,
+            title='Order Delivered ✅',
+            message=(
+                f'Your order has been delivered successfully. '
+                f'Enjoy!'
+            ),
+            notification_type='delivery',
+            data={'delivery_id': delivery.id}
+        )
+
+        # Notify vendor
+        if delivery.order and delivery.order.business:
+            send_notification(
+                user=delivery.order.business.owner,
+                title='Order Delivered ✅',
+                message=(
+                    f'Order {delivery.order.order_number} has been '
+                    f'delivered successfully.'
+                ),
+                notification_type='delivery',
+                data={
+                    'delivery_id': delivery.id,
+                    'order_id': delivery.order.id
+                }
+            )
+
+        return api_response(
+            'success',
+            'Delivery confirmed successfully!',
+            data=DeliveryRequestSerializer(delivery).data
+        )
+
+class ResendDeliveryOTPView(APIView):
+    """
+    Resend delivery OTP to customer.
+    POST /api/v1/deliveries/<pk>/resend-otp/
+    Only callable by the assigned driver.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            delivery = DeliveryRequest.objects.get(pk=pk)
+        except DeliveryRequest.DoesNotExist:
+            return api_response(
+                'error', 'Delivery not found',
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+
+        if (
+            not hasattr(request.user, 'driver_profile')
+            or delivery.driver != request.user.driver_profile
+        ):
+            return api_response(
+                'error',
+                'Only the assigned driver can resend OTP',
+                http_status=status.HTTP_403_FORBIDDEN
+            )
+
+        if delivery.status == 'delivered':
+            return api_response(
+                'error', 'Delivery already confirmed',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            from .utils import send_delivery_otp
+            send_delivery_otp(delivery)
+        except Exception as e:
+            return api_response(
+                'error', f'Failed to resend OTP: {e}',
+                http_status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        return api_response(
+            'success',
+            'OTP resent to customer via email, SMS, and WhatsApp'
+        )

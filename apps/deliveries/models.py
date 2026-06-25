@@ -29,8 +29,10 @@ class DeliveryRequest(TimeStampedModel):
     STATUS_CHOICES = (
         ('pending', 'Pending'),
         ('assigned', 'Assigned'),
+        ('at_pickup', 'Driver At Pickup'),
         ('picked_up', 'Picked Up'),
         ('in_transit', 'In Transit'),
+        ('at_dropoff', 'Driver At Dropoff'),
         ('delivered', 'Delivered'),
         ('failed', 'Failed'),
         ('cancelled', 'Cancelled'),
@@ -64,6 +66,13 @@ class DeliveryRequest(TimeStampedModel):
         on_delete=models.SET_NULL,
         null=True, blank=True,
         related_name='deliveries'
+    )
+    order = models.OneToOneField(
+        'orders.Order',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='delivery'
     )
     payment_model = models.CharField(
         max_length=20,
@@ -211,6 +220,22 @@ class DeliveryRequest(TimeStampedModel):
     # Timestamps
     picked_up_at = models.DateTimeField(null=True, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)
+    arrived_at_pickup_at = models.DateTimeField(
+        null=True, blank=True
+    )
+    arriving_soon_alerted_at = models.DateTimeField(
+        null=True, blank=True
+    )
+    arrived_at_dropoff_at = models.DateTimeField(
+        null=True, blank=True
+    )
+    delivery_otp = models.CharField(
+        max_length=6, null=True, blank=True
+    )
+    delivery_otp_expires_at = models.DateTimeField(
+        null=True, blank=True
+    )
+    delivery_otp_verified = models.BooleanField(default=False)
 
     notes = models.TextField(blank=True, null=True)
     delivery_proof = models.ImageField(
