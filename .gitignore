@@ -1,4 +1,1 @@
-
-
-
-.env`n# Python`n__pycache__/`n*.py[cod]`n*.pyo`n*.pyc`n`n# Virtual env`nkess/`nvenv/`nenv/`n`n# Django`n*.log`ndb.sqlite3`n`n# OS`n.DS_Store`nThumbs.db`n`n# Test files`ntest_*.py
+.env`r`n`r`n# Python`r`n__pycache__/`r`n*.py[cod]`r`n*.pyo`r`n*.pyc`r`n`r`n# Virtual env`r`nkess/`r`nvenv/`r`nenv/`r`n`r`n# Django`r`n*.log`r`ndb.sqlite3`r`n`r`n# OS`r`n.DS_Store`r`nThumbs.db`r`n`r`n# Test files`r`ntest_*.py
