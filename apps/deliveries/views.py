@@ -914,6 +914,14 @@ class ConfirmDeliveryView(APIView):
             delivery.order.delivered_at = now
             delivery.order.save()
 
+        # Settle vendor + driver earnings (pending → available)
+        if delivery.order:
+            try:
+                from apps.wallet.earnings import settle_order_earnings
+                settle_order_earnings(delivery.order)
+            except Exception as e:
+                print(f"Order earnings settlement error: {e}")
+
         # Notify customer
         send_notification(
             user=delivery.customer,

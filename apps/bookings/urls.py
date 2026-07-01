@@ -18,6 +18,8 @@ from .views import (
     BookingCouponListCreateView,
     BookingInvoiceView,
     BookingReminderView,
+    BookingCheckInView,
+    BookingCheckOutView,
 )
 
 urlpatterns = [
@@ -38,6 +40,8 @@ urlpatterns = [
     path('', BookingListCreateView.as_view(), name='bookings'),
     path('<int:pk>/', BookingDetailView.as_view(), name='booking_detail'),
     path('<int:pk>/cancel/', CancelBookingView.as_view(), name='cancel_booking'),
+    path('<int:pk>/check-in/',BookingCheckInView.as_view(), name='booking_checkin'),
+    path('<int:pk>/check-out/', BookingCheckOutView.as_view(), name='booking_checkout'),
 
     # Booking payments
     path('<int:pk>/payments/', BookingPaymentView.as_view(), name='booking_payments'),

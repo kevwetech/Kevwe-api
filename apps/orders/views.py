@@ -527,6 +527,34 @@ class OrderListCreateView(APIView):
                 create_order_commission(order)
             except Exception as e:
                 print(f"Commission creation error: {e}")
+            
+            # Credit vendor + driver earnings (goes to pending)
+            try:
+                from apps.wallet.earnings import credit_order_earnings
+                credit_order_earnings(order)
+            except Exception as e:
+                print(f"Order earnings credit error: {e}")
+
+            # Fraud check on order placement
+            try:
+                from apps.fraud.utils import (
+                    score_order, evaluate_and_alert
+                )
+                score, rules = score_order(request.user, order)
+                if score > 0:
+                    evaluate_and_alert(
+                        alert_type='order',
+                        user=request.user,
+                        score=score,
+                        triggered_rules=rules,
+                        context={
+                            'order_id': order.id,
+                            'order_number': order.order_number,
+                            'total': str(order.total),
+                        }
+                    )
+            except Exception as e:
+                print(f"Fraud check error: {e}")
 
             # Auto create delivery request for delivery orders
             try:

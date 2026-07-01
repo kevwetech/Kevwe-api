@@ -1,0 +1,145 @@
+from django.urls import path
+from .views import (
+    InitiateKYCView,
+    KYCProfileView,
+    UploadKYCDocumentView,
+    UploadKYCSelfieView,
+    SubmitKYCAddressView,
+    KYCSessionListView,
+    SumsubWebhookView,
+    BusinessKYCView,
+    BusinessKYCDocumentUploadView,
+    AdminKYCListView,
+    AdminKYCDetailView,
+    AdminKYCReviewView,
+    AdminKYCLogsView,
+    AdminDuplicateIdentityListView,
+    AdminWatchlistListView,
+    AdminWebhookListView,
+    AdminBusinessKYCListView,
+    AdminBusinessKYCReviewView,
+    KYCConfigurationView,
+    KYCRequirementView,
+    KYCDashboardView,
+    
+)
+
+urlpatterns = [
+    # ── Customer ──────────────────────────────────────────
+    path(
+        'initiate/',
+        InitiateKYCView.as_view(),
+        name='kyc_initiate'
+    ),
+    path(
+        'profile/',
+        KYCProfileView.as_view(),
+        name='kyc_profile'
+    ),
+    path(
+        'documents/upload/',
+        UploadKYCDocumentView.as_view(),
+        name='kyc_upload_document'
+    ),
+    path(
+        'selfie/upload/',
+        UploadKYCSelfieView.as_view(),
+        name='kyc_upload_selfie'
+    ),
+    path(
+        'address/',
+        SubmitKYCAddressView.as_view(),
+        name='kyc_address'
+    ),
+    path(
+        'sessions/',
+        KYCSessionListView.as_view(),
+        name='kyc_sessions'
+    ),
+
+    # ── Business KYC ──────────────────────────────────────
+    path(
+        'business/<int:business_id>/',
+        BusinessKYCView.as_view(),
+        name='business_kyc'
+    ),
+    path(
+        'business/<int:business_id>/documents/',
+        BusinessKYCDocumentUploadView.as_view(),
+        name='business_kyc_documents'
+    ),
+
+    # ── Webhooks ──────────────────────────────────────────
+    path(
+        'webhook/sumsub/',
+        SumsubWebhookView.as_view(),
+        name='sumsub_webhook'
+    ),
+
+    # ── Admin ─────────────────────────────────────────────
+    path(
+        'admin/dashboard/',
+        KYCDashboardView.as_view(),
+        name='kyc_dashboard'
+    ),
+    path(
+        'admin/',
+        AdminKYCListView.as_view(),
+        name='admin_kyc_list'
+    ),
+    path(
+        'admin/<int:pk>/',
+        AdminKYCDetailView.as_view(),
+        name='admin_kyc_detail'
+    ),
+    path(
+        'admin/<int:pk>/review/',
+        AdminKYCReviewView.as_view(),
+        name='admin_kyc_review'
+    ),
+    path(
+        'admin/<int:pk>/logs/',
+        AdminKYCLogsView.as_view(),
+        name='kyc_review_logs'
+    ),
+    path(
+        'admin/duplicates/',
+        AdminDuplicateIdentityListView.as_view(),
+        name='kyc_duplicates'
+    ),
+    path(
+        'admin/duplicates/<int:pk>/',
+        AdminDuplicateIdentityListView.as_view(),
+        name='kyc_duplicate_detail'
+    ),
+    path(
+        'admin/watchlist/',
+        AdminWatchlistListView.as_view(),
+        name='kyc_watchlist'
+    ),
+    path(
+        'admin/webhooks/',
+        AdminWebhookListView.as_view(),
+        name='kyc_webhooks'
+    ),
+    path(
+        'admin/businesses/',
+        AdminBusinessKYCListView.as_view(),
+        name='admin_business_kyc_list'
+    ),
+    path(
+        'admin/businesses/<int:pk>/review/',
+        AdminBusinessKYCReviewView.as_view(),
+        name='admin_business_kyc_review'
+    ),
+    path(
+        'admin/config/',
+        KYCConfigurationView.as_view(),
+        name='kyc_config'
+    ),
+    path(
+        'admin/requirements/',
+        KYCRequirementView.as_view(),
+        name='kyc_requirements'
+    ),
+]

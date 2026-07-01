@@ -110,7 +110,12 @@ class BookableItem(TimeStampedModel):
     )  # max days in advance
     cancellation_hours = models.IntegerField(
         default=24
-    )  # free cancellation window
+    ) 
+    requires_kyc = models.BooleanField(
+        default=False,
+        help_text='Require guest identity verification before booking'
+    )
+     # free cancellation window
     auto_confirm = models.BooleanField(default=True)
 
     # Location

@@ -391,6 +391,50 @@ class VendorWallet(TimeStampedModel):
             reference=reference,
             status='success',
         )
+    
+    def settle_for_order(self, order):
+        """
+        Force-settle all pending earnings linked to a specific order.
+        Called when delivery is confirmed (OTP verified).
+        """
+        eligible = VendorTransaction.objects.filter(
+            vendor_wallet=self,
+            transaction_type='earning',
+            status='pending',
+            order=order,
+        )
+        total_settled = Decimal('0')
+        for txn in eligible:
+            total_settled += txn.amount
+            txn.status = 'success'
+            txn.save()
+        if total_settled > 0:
+            self.pending_balance -= total_settled
+            self.available_balance += total_settled
+            self.save()
+        return total_settled
+
+    def settle_for_booking(self, booking):
+        """
+        Force-settle all pending earnings linked to a specific booking.
+        Called when booking is checked-in or completed.
+        """
+        eligible = VendorTransaction.objects.filter(
+            vendor_wallet=self,
+            transaction_type='earning',
+            status='pending',
+            booking=booking,
+        )
+        total_settled = Decimal('0')
+        for txn in eligible:
+            total_settled += txn.amount
+            txn.status = 'success'
+            txn.save()
+        if total_settled > 0:
+            self.pending_balance -= total_settled
+            self.available_balance += total_settled
+            self.save()
+        return total_settled
 
     def settle_pending(self):
         eligible = VendorTransaction.objects.filter(

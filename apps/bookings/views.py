@@ -589,6 +589,33 @@ class BookingListCreateView(APIView):
             except Exception as e:
                 print(f"Subscription check error: {e}")
 
+            # ── KYC check ──
+            if getattr(item, 'requires_kyc', False):
+                try:
+                    from apps.kyc.utils import check_kyc_required
+                    is_required, is_verified, kyc_profile = (
+                        check_kyc_required(item, request.user)
+                    )
+                    if is_required and not is_verified:
+                        return api_response(
+                            'error',
+                            'Identity verification (KYC) is required '
+                            'to book this item. Please complete KYC '
+                            'at /api/v1/kyc/initiate/',
+                            data={
+                                'kyc_required': True,
+                                'kyc_status': (
+                                    kyc_profile.status
+                                    if kyc_profile
+                                    else 'not_started'
+                                ),
+                                'kyc_url': '/api/v1/kyc/initiate/',
+                            },
+                            http_status=status.HTTP_403_FORBIDDEN
+                        )
+                except Exception as e:
+                    print(f"KYC check error: {e}")
+
             # ── Availability check ──
             is_available = True
             reason = 'Available'
@@ -727,7 +754,7 @@ class BookingListCreateView(APIView):
                         booking.checkin_code = ''.join(
                             random.choices('0123456789', k=6)
                         )
-                        
+
                         booking.save()
 
                         # Send check-in code + directions to customer
@@ -738,6 +765,15 @@ class BookingListCreateView(APIView):
                             send_booking_checkin_notification(booking)
                         except Exception as e:
                             print(f"Booking notification error: {e}")
+
+                        # Credit vendor earnings (goes to pending)
+                        try:
+                            from apps.wallet.earnings import (
+                                credit_booking_earnings
+                            )
+                            credit_booking_earnings(booking)
+                        except Exception as e:
+                            print(f"Booking earnings credit error: {e}")
 
                         
                         # Credit business wallet
@@ -1691,4 +1727,179 @@ class BookingReminderView(APIView):
             'error', 'Creation failed',
             errors=serializer.errors,
             http_status=status.HTTP_400_BAD_REQUEST
+        )
+
+class BookingCheckInView(APIView):
+    """
+    Vendor/staff marks a booking as checked in using the check-in code.
+    POST /api/v1/bookings/<pk>/check-in/
+    Body: { "checkin_code": "654321" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.utils import timezone
+        from apps.notifications.utils import send_notification
+        from apps.wallet.earnings import settle_booking_earnings
+
+        try:
+            booking = Booking.objects.get(pk=pk)
+        except Booking.DoesNotExist:
+            return api_response(
+                'error', 'Booking not found',
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Only business owner/staff can check in
+        if (
+            not booking.business or
+            booking.business.owner != request.user
+        ):
+            return api_response(
+                'error',
+                'Only the business owner can check in guests',
+                http_status=status.HTTP_403_FORBIDDEN
+            )
+
+        if booking.status == 'checked_in':
+            return api_response(
+                'error', 'Guest already checked in',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if booking.status not in ['pending', 'confirmed']:
+            return api_response(
+                'error',
+                f'Cannot check in a booking with '
+                f'status: {booking.status}',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Verify check-in code
+        checkin_code = request.data.get(
+            'checkin_code', ''
+        ).strip()
+
+        if not checkin_code:
+            return api_response(
+                'error', 'Check-in code is required',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if checkin_code != booking.checkin_code:
+            return api_response(
+                'error', 'Invalid check-in code',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Mark as checked in
+        now = timezone.now()
+        booking.status = 'checked_in'
+        booking.actual_check_in = now
+        booking.save()
+
+        # Create tracking entry
+        BookingTracking.objects.create(
+            booking=booking,
+            status='checked_in',
+            description=(
+                f'Guest {booking.guest_name} checked in '
+                f'via code {booking.checkin_code}'
+            ),
+            updated_by=request.user,
+        )
+
+        # Settle vendor earnings (pending → available)
+        try:
+            settle_booking_earnings(booking)
+        except Exception as e:
+            print(f"Booking settlement error: {e}")
+
+        # Notify customer
+        send_notification(
+            user=booking.user,
+            title='Checked In ✅',
+            message=(
+                f'You have been checked in at '
+                f'{booking.item.name}. Enjoy your stay!'
+            ),
+            notification_type='booking',
+            data={'booking_id': booking.id}
+        )
+
+        return api_response(
+            'success',
+            f'Guest {booking.guest_name} checked in successfully!',
+            data=BookingSerializer(
+                booking, context={'request': request}
+            ).data
+        )
+
+
+class BookingCheckOutView(APIView):
+    """
+    Vendor/staff marks a booking as checked out.
+    POST /api/v1/bookings/<pk>/check-out/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.utils import timezone
+        from apps.notifications.utils import send_notification
+
+        try:
+            booking = Booking.objects.get(pk=pk)
+        except Booking.DoesNotExist:
+            return api_response(
+                'error', 'Booking not found',
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+
+        if (
+            not booking.business or
+            booking.business.owner != request.user
+        ):
+            return api_response(
+                'error',
+                'Only the business owner can check out guests',
+                http_status=status.HTTP_403_FORBIDDEN
+            )
+
+        if booking.status != 'checked_in':
+            return api_response(
+                'error',
+                'Guest must be checked in before checking out',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        now = timezone.now()
+        booking.status = 'checked_out'
+        booking.actual_check_out = now
+        booking.save()
+
+        BookingTracking.objects.create(
+            booking=booking,
+            status='checked_out',
+            description=f'Guest {booking.guest_name} checked out',
+            updated_by=request.user,
+        )
+
+        # Notify customer
+        send_notification(
+            user=booking.user,
+            title='Checked Out',
+            message=(
+                f'You have been checked out from '
+                f'{booking.item.name}. Thank you!'
+            ),
+            notification_type='booking',
+            data={'booking_id': booking.id}
+        )
+
+        return api_response(
+            'success',
+            f'Guest {booking.guest_name} checked out successfully!',
+            data=BookingSerializer(
+                booking, context={'request': request}
+            ).data
         )

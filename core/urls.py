@@ -53,6 +53,10 @@ urlpatterns = [
     path('api/v1/commissions/', include('apps.commissions.urls')),
     path('api/v1/analytics/', include('apps.analytics.urls')),
     path('api/v1/currencies/', include('apps.currencies.urls')),
+    path('api/v1/fraud/', include('apps.fraud.urls')),
+    path('api/v1/kyc/', include('apps.kyc.urls')),
+    path('api/v1/services/', include('apps.services.urls')),
+    path('api/v1/staff/', include('apps.staff.urls')),
 
     # API Docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

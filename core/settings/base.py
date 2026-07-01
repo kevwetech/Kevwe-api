@@ -58,6 +58,10 @@ INSTALLED_APPS = [
     'apps.commissions',
     'apps.analytics',
     'apps.currencies',
+    'apps.fraud',
+    'apps.kyc',
+    'apps.services',
+    'apps.staff',
 ]
 
 MIDDLEWARE = [
