@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
 from apps.common.views import api_response
 from apps.common.permissions import IsAdmin, IsVendor
-from apps.marketplace.models import Business, BusinessStaff
+from apps.marketplace.models import Business
 from .models import (
     ProductCategory, Product,
     ProductImage, ProductVariantOption,
@@ -53,15 +53,8 @@ def get_business_or_error(pk, user=None, owner_only=False):
 
 def can_manage_menu(user, business):
     """Check if user can manage menu"""
-    if business.owner == user:
-        return True
-    return BusinessStaff.objects.filter(
-        business=business,
-        user=user,
-        status='active'
-    ).filter(
-        role__permissions__codename='can_manage_menu'
-    ).exists()
+    from apps.staff.utils import check_permission
+    return check_permission(user, business, 'manage_products')
 
 
 # ─── Category Views ──────────────────────────────

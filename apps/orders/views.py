@@ -807,15 +807,12 @@ class VendorOrderListView(APIView):
             )
 
         # Check permission
-        from apps.marketplace.models import BusinessStaff
+        
         is_owner = business.owner == request.user
-        has_permission = BusinessStaff.objects.filter(
-            business=business,
-            user=request.user,
-            status='active'
-        ).filter(
-            role__permissions__codename='can_manage_orders'
-        ).exists()
+        from apps.staff.utils import check_permission
+        has_permission = check_permission(
+            request.user, business, 'view_orders'
+        )
 
         if not is_owner and not has_permission:
             return api_response(
@@ -865,7 +862,7 @@ class VendorUpdateOrderView(APIView):
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, business_id, pk):
-        from apps.marketplace.models import Business, BusinessStaff
+        from apps.marketplace.models import Business
         try:
             business = Business.objects.get(pk=business_id)
         except Business.DoesNotExist:
@@ -875,19 +872,15 @@ class VendorUpdateOrderView(APIView):
                 http_status=status.HTTP_404_NOT_FOUND
             )
 
+        from apps.staff.utils import check_permission
         is_owner = business.owner == request.user
-        has_permission = BusinessStaff.objects.filter(
-            business=business,
-            user=request.user,
-            status='active'
-        ).filter(
-            role__permissions__codename='can_manage_orders'
-        ).exists()
-
+        has_permission = check_permission(
+            request.user, business, 'view_orders'
+        )
         if not is_owner and not has_permission:
             return api_response(
                 'error',
-                'You do not have permission',
+                'You do not have permission to view orders',
                 http_status=status.HTTP_403_FORBIDDEN
             )
 

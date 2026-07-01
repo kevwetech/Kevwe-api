@@ -1,62 +1,126 @@
 from django.urls import path
 from .views import (
-    IndustryListCreateView,
-    IndustryDetailView,
-    BusinessListView,
-    BusinessDetailView,
-    RegisterBusinessView,
-    MyBusinessView,
-    BusinessHoursView,
-    BusinessImageView,
+    IndustryListCreateView, IndustryDetailView,
+    BusinessCategoryListView,
+    BusinessListView, BusinessDetailView,
+    RegisterBusinessView, MyBusinessView,
+    BusinessSettingsView,
+    OrderSettingsView, BookingSettingsView,
+    ServiceSettingsView,
+    BusinessHoursView, BusinessImageView,
     BusinessDocumentView,
-    PermissionListCreateView,
-    PermissionDetailView,
-    BusinessRoleListCreateView,
-    BusinessRoleDetailView,
-    BusinessStaffListView,
-    InviteStaffView,
-    AcceptStaffInvitationView,
-    BusinessStaffDetailView,
-    MyStaffProfileView,
     NearbyBusinessesView,
-    AdminBusinessListView,
-    AdminBusinessApproveView,
+    AdminBusinessListView, AdminBusinessApproveView,
+    AdminVerifyBusinessDocumentView,
 )
 
 urlpatterns = [
     # Industries
-    path('industries/', IndustryListCreateView.as_view(), name='industries'),
-    path('industries/<int:pk>/', IndustryDetailView.as_view(), name='industry_detail'),
+    path(
+        'industries/',
+        IndustryListCreateView.as_view(),
+        name='industries'
+    ),
+    path(
+        'industries/<int:pk>/',
+        IndustryDetailView.as_view(),
+        name='industry_detail'
+    ),
 
-    # Businesses - public
-    path('businesses/', BusinessListView.as_view(), name='businesses'),
-    path('businesses/nearby/', NearbyBusinessesView.as_view(), name='nearby_businesses'),
-    path('businesses/<int:pk>/', BusinessDetailView.as_view(), name='business_detail'),
+    # Categories
+    path(
+        'categories/',
+        BusinessCategoryListView.as_view(),
+        name='business_categories'
+    ),
 
-    # Business - vendor
-    path('businesses/register/', RegisterBusinessView.as_view(), name='register_business'),
-    path('businesses/my/', MyBusinessView.as_view(), name='my_businesses'),
-    path('businesses/<int:pk>/my/', MyBusinessView.as_view(), name='my_business_update'),
-    path('businesses/<int:pk>/hours/', BusinessHoursView.as_view(), name='business_hours'),
-    path('businesses/<int:pk>/images/', BusinessImageView.as_view(), name='business_images'),
-    path('businesses/<int:pk>/documents/', BusinessDocumentView.as_view(), name='business_documents'),
+    # Public business browse
+    path(
+        'businesses/',
+        BusinessListView.as_view(),
+        name='businesses'
+    ),
+    path(
+        'businesses/<int:pk>/',
+        BusinessDetailView.as_view(),
+        name='business_detail'
+    ),
+    path(
+        'businesses/nearby/',
+        NearbyBusinessesView.as_view(),
+        name='nearby_businesses'
+    ),
 
-    # Permissions (admin only)
-    path('permissions/', PermissionListCreateView.as_view(), name='permissions'),
-    path('permissions/<int:pk>/', PermissionDetailView.as_view(), name='permission_detail'),
+    # Business registration & management
+    path(
+        'businesses/register/',
+        RegisterBusinessView.as_view(),
+        name='register_business'
+    ),
+    path(
+        'businesses/mine/',
+        MyBusinessView.as_view(),
+        name='my_businesses'
+    ),
+    path(
+        'businesses/<int:pk>/update/',
+        MyBusinessView.as_view(),
+        name='update_business'
+    ),
 
-    # Roles
-    path('businesses/<int:pk>/roles/', BusinessRoleListCreateView.as_view(), name='business_roles'),
-    path('businesses/<int:pk>/roles/<int:role_id>/', BusinessRoleDetailView.as_view(), name='business_role_detail'),
+    # Settings
+    path(
+        'businesses/<int:pk>/settings/',
+        BusinessSettingsView.as_view(),
+        name='business_settings'
+    ),
+    path(
+        'businesses/<int:pk>/order-settings/',
+        OrderSettingsView.as_view(),
+        name='order_settings'
+    ),
+    path(
+        'businesses/<int:pk>/booking-settings/',
+        BookingSettingsView.as_view(),
+        name='booking_settings'
+    ),
+    path(
+        'businesses/<int:pk>/service-settings/',
+        ServiceSettingsView.as_view(),
+        name='service_settings'
+    ),
 
-    # Staff
-    path('businesses/<int:pk>/staff/', BusinessStaffListView.as_view(), name='business_staff'),
-    path('businesses/<int:pk>/staff/invite/', InviteStaffView.as_view(), name='invite_staff'),
-    path('businesses/<int:pk>/staff/<int:staff_id>/', BusinessStaffDetailView.as_view(), name='staff_detail'),
-    path('staff/accept-invitation/', AcceptStaffInvitationView.as_view(), name='accept_staff_invitation'),
-    path('staff/my/', MyStaffProfileView.as_view(), name='my_staff_profile'),
+    # Hours, images, documents
+    path(
+        'businesses/<int:pk>/hours/',
+        BusinessHoursView.as_view(),
+        name='business_hours'
+    ),
+    path(
+        'businesses/<int:pk>/images/',
+        BusinessImageView.as_view(),
+        name='business_images'
+    ),
+    path(
+        'businesses/<int:pk>/documents/',
+        BusinessDocumentView.as_view(),
+        name='business_documents'
+    ),
 
     # Admin
-    path('admin/businesses/', AdminBusinessListView.as_view(), name='admin_businesses'),
-    path('admin/businesses/<int:pk>/', AdminBusinessApproveView.as_view(), name='admin_business_approve'),
+    path(
+        'admin/businesses/',
+        AdminBusinessListView.as_view(),
+        name='admin_businesses'
+    ),
+    path(
+        'admin/businesses/<int:pk>/approve/',
+        AdminBusinessApproveView.as_view(),
+        name='admin_approve_business'
+    ),
+    path(
+        'admin/documents/<int:pk>/verify/',
+        AdminVerifyBusinessDocumentView.as_view(),
+        name='admin_verify_document'
+    ),
 ]
