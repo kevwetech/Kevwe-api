@@ -15,11 +15,13 @@ class Industry(TimeStampedModel):
         ('inactive', 'Inactive'),
     )
     INTERACTION_TYPE_CHOICES = (
-        ('orders', 'Orders (delivery/pickup)'),
-        ('bookings', 'Bookings (reservations)'),
-        ('service_requests', 'Service Requests (on-demand)'),
-        ('rides', 'Rides (transport)'),
-        ('mixed', 'Mixed (multiple interaction types)'),
+        ('orders',             'Orders (delivery/pickup)'),
+        ('bookings',           'Bookings (hotels/apartments)'),
+        ('services',           'Service Requests (quote-based)'),
+        ('appointments',       'Appointments (fixed time slots)'),
+        ('scheduled_services', 'Scheduled Services (provider visits customer)'),
+        ('rides',              'Rides (transport)'),
+        ('mixed',              'Mixed'),
     )
 
     name = models.CharField(max_length=100, unique=True)
@@ -425,6 +427,19 @@ class BookingSettings(TimeStampedModel):
         Business,
         on_delete=models.CASCADE,
         related_name='booking_settings'
+    )
+    BOOKING_TYPE_CHOICES = (
+        ('hotel',        'Hotel'),
+        ('apartment',    'Apartment / Shortlet'),
+        ('event_center', 'Event Center'),
+        ('resort',       'Resort'),
+        ('guesthouse',   'Guest House'),
+        ('coworking',    'Coworking Space'),
+    )
+    booking_type = models.CharField(
+        max_length=20,
+        choices=BOOKING_TYPE_CHOICES,
+        default='hotel',
     )
     # Check-in / check-out (hotels, apartments)
     check_in_time = models.TimeField(

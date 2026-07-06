@@ -321,7 +321,10 @@ class RegisterBusinessView(APIView):
         if interaction == 'orders':
             OrderSettings.objects.create(business=business)
         elif interaction == 'bookings':
-            BookingSettings.objects.create(business=business)
+            BookingSettings.objects.create(
+                business=business,
+                booking_type=data.get('booking_type', 'hotel'),
+            )
         elif interaction == 'services':
             ServiceSettings.objects.create(business=business)
 

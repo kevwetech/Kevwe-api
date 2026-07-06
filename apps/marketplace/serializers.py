@@ -166,6 +166,11 @@ class CreateBusinessSerializer(serializers.Serializer):
     city_id = serializers.IntegerField(required=False)
     state_id = serializers.IntegerField(required=False)
     country_id = serializers.IntegerField(required=False)
+    booking_type = serializers.ChoiceField(
+        choices=['hotel','apartment','event_center','resort','guesthouse','coworking'],
+        required=False,
+        default='hotel',
+    )
     latitude = serializers.DecimalField(
         max_digits=9, decimal_places=6, required=False
     )
@@ -175,3 +180,4 @@ class CreateBusinessSerializer(serializers.Serializer):
     tags = serializers.ListField(
         child=serializers.CharField(), required=False
     )
+    
