@@ -303,7 +303,36 @@ class Business(TimeStampedModel):
 
     @property
     def accepts_service_requests(self):
-        return self.interaction_type == 'service_requests'
+        return self.interaction_type == 'services'
+
+class BusinessSubtype(models.Model):
+    INTERACTION_TYPE_CHOICES = (
+        ('orders',             'Orders (delivery/pickup)'),
+        ('bookings',           'Bookings (hotels/apartments)'),
+        ('services',           'Service Requests (quote-based)'),
+        ('appointments',       'Appointments (fixed time slots)'),
+        ('scheduled_services', 'Scheduled Services (provider visits customer)'),
+        ('rides',              'Rides (transport)'),
+        ('mixed',              'Mixed'),
+    )
+    interaction_type = models.CharField(
+        max_length=30,
+        choices=INTERACTION_TYPE_CHOICES,
+    )
+    name   = models.CharField(max_length=100)
+    slug   = models.SlugField(unique=True)
+    icon   = models.CharField(max_length=10, blank=True)
+    description = models.TextField(blank=True)
+    is_active   = models.BooleanField(default=True)
+    order       = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ['interaction_type', 'order', 'name']
+        verbose_name = 'Business Subtype'
+        verbose_name_plural = 'Business Subtypes'
+
+    def __str__(self):
+        return f"{self.get_interaction_type_display()} → {self.name}"
 
 
 class BusinessSettings(TimeStampedModel):
@@ -731,7 +760,7 @@ class BusinessDocument(TimeStampedModel):
             f"{self.document_type}"
         )
 
-class AppointmentSettings(models.Model):
+class AppointmentSettings(TimeStampedModel):
     business = models.OneToOneField(
         Business,
         on_delete=models.CASCADE,
@@ -751,36 +780,8 @@ class AppointmentSettings(models.Model):
     requires_deposit      = models.BooleanField(default=False)
     deposit_amount        = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     cancellation_hours    = models.IntegerField(default=2)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    
 
     def __str__(self):
         return f"Appointment Settings — {self.business.name}"
 
-class BusinessSubtype(models.Model):
-    INTERACTION_TYPE_CHOICES = (
-        ('bookings',           'Bookings'),
-        ('orders',             'Orders'),
-        ('services',           'Services'),
-        ('appointments',       'Appointments'),
-        ('scheduled_services', 'Scheduled Services'),
-        ('rides',              'Rides'),
-    )
-    interaction_type = models.CharField(
-        max_length=30,
-        choices=INTERACTION_TYPE_CHOICES,
-    )
-    name   = models.CharField(max_length=100)
-    slug   = models.SlugField(unique=True)
-    icon   = models.CharField(max_length=10, blank=True)
-    description = models.TextField(blank=True)
-    is_active   = models.BooleanField(default=True)
-    order       = models.IntegerField(default=0)
-
-    class Meta:
-        ordering = ['interaction_type', 'order', 'name']
-        verbose_name = 'Business Subtype'
-        verbose_name_plural = 'Business Subtypes'
-
-    def __str__(self):
-        return f"{self.get_interaction_type_display()} → {self.name}"
