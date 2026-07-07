@@ -42,6 +42,13 @@ class Service(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name='services'
     )
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='services',
+        help_text='Business that offers this service'
+    )
     name = models.CharField(max_length=100)
     slug = models.SlugField(unique=True)
     description = models.TextField(blank=True)
@@ -374,6 +381,12 @@ class ServiceRequest(TimeStampedModel):
         on_delete=models.SET_NULL,
         null=True,
         related_name='requests'
+    )
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='service_requests',
     )
     provider = models.ForeignKey(
         ServiceProvider,

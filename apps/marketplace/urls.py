@@ -12,7 +12,7 @@ from .views import (
     NearbyBusinessesView,
     AdminBusinessListView, AdminBusinessApproveView,
     AdminVerifyBusinessDocumentView,
-    AppointmentSettingsView, RideSettingsView   
+    AppointmentSettingsView, RideSettingsView, UniversalSearchView
 )
 
 urlpatterns = [
@@ -130,5 +130,7 @@ urlpatterns = [
     ),
     path('businesses/<int:pk>/ride-settings/',
     RideSettingsView.as_view(),
-    name='ride-settings'),
+    name='ride-settings'
+    ),
+    path('search/', UniversalSearchView.as_view(), name='universal_search'),
 ]

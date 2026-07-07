@@ -1,4 +1,5 @@
 from rest_framework import status
+from django.db import models
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -1113,3 +1114,133 @@ class AdminVerifyBusinessDocumentView(APIView):
             'success', f'Document {new_status}',
             data=BusinessDocumentSerializer(doc).data
         )
+
+class UniversalSearchView(APIView):
+    """
+    GET /api/v1/marketplace/search/?q=pizza&limit=5
+    Returns businesses, products, services, categories, industries
+    """
+    permission_classes = []
+
+    def get(self, request):
+        q = request.query_params.get('q', '').strip()
+        limit = int(request.query_params.get('limit', 5))
+
+        if not q:
+            return api_response('error', 'Search query required',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        from apps.catalog.models import Product
+        from apps.services.models import Service
+
+        # 1. Businesses
+        businesses = Business.objects.filter(
+            models.Q(name__icontains=q) |
+            models.Q(description__icontains=q) |
+            models.Q(tags__icontains=q),
+            status='active', is_active=True,
+        )[:limit]
+
+        # 2. Products / Menu items
+        try:
+            products = Product.objects.filter(
+                models.Q(name__icontains=q) |
+                models.Q(description__icontains=q),
+                is_active=True,
+            ).select_related('business')[:limit]
+        except Exception:
+            products = []
+
+        # 3. Services
+        try:
+            services = Service.objects.filter(
+            models.Q(name__icontains=q) |
+            models.Q(description__icontains=q),
+            is_active=True,
+        ).select_related('business', 'category')[:limit]
+        except Exception:
+            services = []
+
+        # 4. Categories
+        categories = BusinessCategory.objects.filter(
+            models.Q(name__icontains=q) |
+            models.Q(description__icontains=q),
+            is_active=True,
+        )[:limit]
+
+        # 5. Industries
+        industries = Industry.objects.filter(
+            models.Q(name__icontains=q) |
+            models.Q(description__icontains=q),
+            status='active',
+        )[:limit]
+
+        # Build unified response
+        results = {
+            'businesses': [
+                {
+                    'type': 'business',
+                    'id': b.id,
+                    'name': b.name,
+                    'slug': b.slug,
+                    'description': b.description,
+                    'city_name': b.city.name if b.city_id else None,
+                    'industry_name': b.industry.name if b.industry_id else None,
+                    'interaction_type': b.interaction_type,
+                    'is_verified': b.is_verified,
+                    'rating': getattr(b, 'rating', None),
+                    'cover_image': b.cover_image.url if b.cover_image else None,
+                    'logo': b.logo.url if b.logo else None,
+                    'url': f'/HOME/HTML/business.html?id={b.id}',
+                } for b in businesses
+            ],
+            'products': [
+                {
+                    'type': 'product',
+                    'id': p.id,
+                    'name': p.name,
+                    'description': p.description,
+                    'price': str(p.price) if hasattr(p, 'price') else None,
+                    'business_id': p.business_id,
+                    'business_name': p.business.name,
+                    'url': f'/HOME/HTML/business.html?id={p.business_id}',
+                } for p in products
+            ],
+            'services': [
+                {
+                    'type': 'service',
+                    'id': s.id,
+                    'name': s.name,
+                    'description': getattr(s, 'description', ''),
+                    'business_id': s.business_id,
+                    'business_name': s.business.name if s.business_id else '',
+                    'category_name': s.category.name if s.category_id else '',
+                    'url': f'/HOME/HTML/business.html?id={s.business_id}' if s.business_id else '',
+                } for s in services
+            ],
+            'categories': [
+                {
+                    'type': 'category',
+                    'id': c.id,
+                    'name': c.name,
+                    'slug': c.slug,
+                    'industry_name': c.industry_name,
+                    'businesses_count': c.businesses_count,
+                    'url': f'/HOME/HTML/category.html?slug={c.slug}',
+                } for c in categories
+            ],
+            'industries': [
+                {
+                    'type': 'industry',
+                    'id': i.id,
+                    'name': i.name,
+                    'slug': i.slug,
+                    'businesses_count': i.businesses_count,
+                    'url': f'/HOME/HTML/industry.html?industry={i.slug}',
+                } for i in industries
+            ],
+            'total': len(businesses) + len(list(products)) + len(list(services)) + len(categories) + len(industries),
+            'query': q,
+        }
+
+        return api_response('success', f'Search results for "{q}"', data=results)
