@@ -44,6 +44,13 @@ class Shipment(TimeStampedModel):
         blank=True,
         related_name='shipments'
     )
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='shipments',
+        help_text='Logistics business handling this shipment'
+    )
 
     # Reference
     reference = models.CharField(max_length=100, unique=True)
@@ -186,6 +193,30 @@ class Shipment(TimeStampedModel):
     # Pricing metadata
     vehicle_type = models.CharField(max_length=50, blank=True, null=True)
     service_type = models.CharField(max_length=20, default='standard')
+
+    # Insurance
+    is_insured = models.BooleanField(default=False)
+    declared_value = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    insurance_fee = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+
+    # Proof of delivery
+    delivery_photo = models.ImageField(
+        upload_to='shipments/proof/', null=True, blank=True
+    )
+    delivery_signature = models.ImageField(
+        upload_to='shipments/signatures/', null=True, blank=True
+    )
+    delivered_at = models.DateTimeField(null=True, blank=True)
+    delivery_otp = models.CharField(max_length=6, blank=True, null=True)
+
+    # Rating
+    rating = models.IntegerField(null=True, blank=True)
+    rating_comment = models.TextField(blank=True, null=True)
+    rated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

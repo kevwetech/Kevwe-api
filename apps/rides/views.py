@@ -6,17 +6,37 @@ from apps.common.views import api_response
 from apps.common.permissions import IsAdmin
 from apps.common.utils import generate_reference
 from apps.drivers.models import DriverProfile
-from .models import Ride, RideVehicleType, RideTracking
+from .utils import calculate_ride_fare, find_available_driver
+from apps.common.email import send_ride_confirmation_email
+from apps.common.ratelimit import AuthRateThrottle
+from .models import (
+    Ride, RideVehicleType, RideTracking,
+    TransportVehicle, TransportRoute, TransportStop,
+    TransportSchedule, ScheduleFare, TransportSeat,
+    TransportBooking, TransportPassenger,
+    TransportBoardingLog, TransportScheduleTracking,
+    TransportCancellationPolicy, TransportBaggage,
+    TransportRating,
+)
 from .serializers import (
     RideSerializer,
     RideVehicleTypeSerializer,
     RequestRideSerializer,
     RateRideSerializer,
     EstimateFareSerializer,
+    TransportVehicleSerializer, TransportRouteSerializer,
+    TransportScheduleSerializer, TransportBookingSerializer,
+    TransportPassengerSerializer, TransportBoardingLogSerializer,
+    TransportScheduleTrackingSerializer,
+    TransportCancellationPolicySerializer,
+    TransportBaggageSerializer, TransportRatingSerializer,
+    BookTransportSerializer, SearchRouteSerializer,
+    ScheduleFareSerializer, TransportSeatSerializer,
 )
-from .utils import calculate_ride_fare, find_available_driver
-from apps.common.email import send_ride_confirmation_email
-from apps.common.ratelimit import AuthRateThrottle
+import uuid
+from django.db import transaction
+from django.utils import timezone
+
 
 
 class VehicleTypeListView(APIView):
@@ -503,3 +523,489 @@ class AdminRideListView(APIView):
                 'results': serializer.data
             }
         )
+
+
+
+# ── Route search ──────────────────────────────────
+class TransportRouteSearchView(APIView):
+    """
+    Search available routes and schedules.
+    GET /api/v1/transport/routes/search/?origin=Lagos&destination=Abuja&date=2026-07-10&passengers=2
+    """
+    permission_classes = []
+
+    def get(self, request):
+        origin      = request.query_params.get('origin', '')
+        destination = request.query_params.get('destination', '')
+        date        = request.query_params.get('date')
+        passengers  = int(request.query_params.get('passengers', 1))
+
+        if not origin or not destination or not date:
+            return api_response(
+                'error', 'origin, destination and date are required',
+                http_status=status.HTTP_400_BAD_REQUEST
+            )
+
+        schedules = TransportSchedule.objects.filter(
+            route__origin__icontains=origin,
+            route__destination__icontains=destination,
+            departure_date=date,
+            status='scheduled',
+            is_active=True,
+        ).select_related('route', 'route__business', 'vehicle')
+
+        # Filter by available seats
+        available = [s for s in schedules if s.available_seats >= passengers]
+
+        return api_response(
+            'success', f'{len(available)} schedules found',
+            data=TransportScheduleSerializer(available, many=True).data
+        )
+
+
+# ── Route list (for a business) ───────────────────
+class TransportRouteListView(APIView):
+    """
+    GET  /api/v1/transport/routes/          ← all active routes
+    POST /api/v1/transport/routes/          ← create route (business owner)
+    """
+    permission_classes = []
+
+    def get(self, request):
+        business_id = request.query_params.get('business_id')
+        qs = TransportRoute.objects.filter(is_active=True)
+        if business_id:
+            qs = qs.filter(business_id=business_id)
+        return api_response(
+            'success', 'Routes retrieved',
+            data=TransportRouteSerializer(qs, many=True).data
+        )
+
+    def post(self, request):
+        if not request.user.is_authenticated:
+            return api_response('error', 'Authentication required',
+                http_status=status.HTTP_401_UNAUTHORIZED)
+        serializer = TransportRouteSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Route created',
+                data=serializer.data,
+                http_status=status.HTTP_201_CREATED)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── Schedule list / create ────────────────────────
+class TransportScheduleListView(APIView):
+    """
+    GET  /api/v1/transport/schedules/?route_id=1&date=2026-07-10
+    POST /api/v1/transport/schedules/
+    """
+    permission_classes = []
+
+    def get(self, request):
+        qs = TransportSchedule.objects.filter(is_active=True)
+        route_id = request.query_params.get('route_id')
+        date     = request.query_params.get('date')
+        if route_id: qs = qs.filter(route_id=route_id)
+        if date:     qs = qs.filter(departure_date=date)
+        return api_response('success', 'Schedules retrieved',
+            data=TransportScheduleSerializer(qs, many=True).data)
+
+    def post(self, request):
+        if not request.user.is_authenticated:
+            return api_response('error', 'Authentication required',
+                http_status=status.HTTP_401_UNAUTHORIZED)
+        serializer = TransportScheduleSerializer(data=request.data)
+        if serializer.is_valid():
+            schedule = serializer.save()
+            # Auto-generate seats if total_seats provided
+            if schedule.total_seats:
+                TransportSeat.objects.bulk_create([
+                    TransportSeat(
+                        schedule=schedule,
+                        seat_number=str(i + 1),
+                        seat_class='economy',
+                        status='available',
+                    )
+                    for i in range(schedule.total_seats)
+                ])
+            return api_response('success', 'Schedule created',
+                data=TransportScheduleSerializer(schedule).data,
+                http_status=status.HTTP_201_CREATED)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── Schedule detail ───────────────────────────────
+class TransportScheduleDetailView(APIView):
+    """
+    GET   /api/v1/transport/schedules/<pk>/
+    PATCH /api/v1/transport/schedules/<pk>/  ← update status
+    """
+    permission_classes = []
+
+    def get(self, request, pk):
+        try:
+            schedule = TransportSchedule.objects.get(pk=pk)
+        except TransportSchedule.DoesNotExist:
+            return api_response('error', 'Schedule not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        return api_response('success', 'Schedule retrieved',
+            data=TransportScheduleSerializer(schedule).data)
+
+    def patch(self, request, pk):
+        if not request.user.is_authenticated:
+            return api_response('error', 'Authentication required',
+                http_status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            schedule = TransportSchedule.objects.get(pk=pk)
+        except TransportSchedule.DoesNotExist:
+            return api_response('error', 'Schedule not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        serializer = TransportScheduleSerializer(
+            schedule, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Schedule updated',
+                data=serializer.data)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── Book transport ────────────────────────────────
+class BookTransportView(APIView):
+    """
+    POST /api/v1/transport/book/
+    Body: { schedule_id, passengers: [{name, phone, seat_class, seat_id}], payment_method }
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = BookTransportSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response('error', 'Validation failed',
+                errors=serializer.errors,
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        data = serializer.validated_data
+
+        # Get schedule
+        try:
+            schedule = TransportSchedule.objects.select_for_update().get(
+                pk=data['schedule_id'])
+        except TransportSchedule.DoesNotExist:
+            return api_response('error', 'Schedule not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        # Check availability
+        num_passengers = len(data['passengers'])
+        if schedule.available_seats < num_passengers:
+            return api_response('error',
+                f'Only {schedule.available_seats} seats available',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        # Calculate total
+        total = 0
+        for p in data['passengers']:
+            seat_class = p.get('seat_class', 'economy')
+            fare = schedule.fares.filter(
+                seat_class=seat_class, is_active=True).first()
+            p['amount'] = float(fare.price) if fare else 0
+            total += p['amount']
+
+        # Create booking
+        booking = TransportBooking.objects.create(
+            schedule=schedule,
+            customer=request.user,
+            reference=f"TRN-{uuid.uuid4().hex[:8].upper()}",
+            total_amount=total,
+            payment_method=data['payment_method'],
+        )
+
+        # Create passengers
+        for p in data['passengers']:
+            seat = None
+            if p.get('seat_id'):
+                try:
+                    seat = TransportSeat.objects.select_for_update().get(
+                        pk=p['seat_id'],
+                        schedule=schedule,
+                        status='available',
+                    )
+                    seat.status = 'booked'
+                    seat.save()
+                except TransportSeat.DoesNotExist:
+                    pass
+
+            passenger = TransportPassenger.objects.create(
+                booking=booking,
+                seat=seat,
+                name=p['name'],
+                phone=p.get('phone', ''),
+                email=p.get('email', ''),
+                seat_class=p.get('seat_class', 'economy'),
+                amount=p['amount'],
+            )
+            passenger.generate_ticket_code()
+
+        return api_response(
+            'success', 'Booking created successfully',
+            data=TransportBookingSerializer(booking).data,
+            http_status=status.HTTP_201_CREATED
+        )
+
+
+# ── Customer booking list ─────────────────────────
+class MyTransportBookingsView(APIView):
+    """
+    GET /api/v1/transport/my-bookings/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        bookings = TransportBooking.objects.filter(
+            customer=request.user
+        ).select_related('schedule', 'schedule__route')
+        return api_response('success', 'Bookings retrieved',
+            data=TransportBookingSerializer(bookings, many=True).data)
+
+
+# ── Booking detail ────────────────────────────────
+class TransportBookingDetailView(APIView):
+    """
+    GET    /api/v1/transport/bookings/<pk>/
+    DELETE /api/v1/transport/bookings/<pk>/  ← cancel
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            booking = TransportBooking.objects.get(
+                pk=pk, customer=request.user)
+        except TransportBooking.DoesNotExist:
+            return api_response('error', 'Booking not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        return api_response('success', 'Booking retrieved',
+            data=TransportBookingSerializer(booking).data)
+
+    def delete(self, request, pk):
+        try:
+            booking = TransportBooking.objects.get(
+                pk=pk, customer=request.user)
+        except TransportBooking.DoesNotExist:
+            return api_response('error', 'Booking not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        if booking.status not in ['pending', 'confirmed']:
+            return api_response('error', 'Booking cannot be cancelled',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        # Apply cancellation policy
+        policy = TransportCancellationPolicy.objects.filter(
+            business=booking.schedule.route.business
+        ).order_by('-hours_before').first()
+
+        refund_percent = 0
+        if policy:
+            hours_until = (
+                timezone.datetime.combine(
+                    booking.schedule.departure_date,
+                    booking.schedule.departure_time
+                ) - timezone.now()
+            ).total_seconds() / 3600
+            applicable = TransportCancellationPolicy.objects.filter(
+                business=booking.schedule.route.business,
+                hours_before__lte=hours_until
+            ).order_by('-hours_before').first()
+            if applicable:
+                refund_percent = applicable.refund_percentage
+
+        refund_amount = float(booking.total_amount) * float(refund_percent) / 100
+
+        booking.status = 'cancelled'
+        booking.cancelled_at = timezone.now()
+        booking.cancellation_reason = request.data.get('reason', '')
+        booking.refund_amount = refund_amount
+        booking.save()
+
+        # Free up seats
+        for passenger in booking.passengers.all():
+            if passenger.seat:
+                passenger.seat.status = 'available'
+                passenger.seat.save()
+
+        return api_response('success',
+            f'Booking cancelled. Refund: ₦{refund_amount:.2f}',
+            data={'refund_amount': refund_amount, 'refund_percent': refund_percent})
+
+
+# ── Boarding scan ─────────────────────────────────
+class TransportBoardingView(APIView):
+    """
+    POST /api/v1/transport/board/
+    Body: { ticket_code, action: check_in|board }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        ticket_code = request.data.get('ticket_code')
+        action      = request.data.get('action', 'board')
+
+        try:
+            passenger = TransportPassenger.objects.get(
+                ticket_code=ticket_code)
+        except TransportPassenger.DoesNotExist:
+            return api_response('error', 'Invalid ticket code',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        if passenger.booking.status != 'confirmed':
+            return api_response('error', 'Booking not confirmed',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        # Update boarding status
+        status_map = {
+            'check_in': 'checked_in',
+            'board':    'boarded',
+        }
+        new_status = status_map.get(action, 'boarded')
+        passenger.boarding_status = new_status
+        if new_status == 'boarded':
+            passenger.boarded_at = timezone.now()
+        passenger.save()
+
+        # Log
+        TransportBoardingLog.objects.create(
+            passenger=passenger,
+            scanned_by=request.user,
+            action=action,
+        )
+
+        return api_response('success',
+            f'Passenger {new_status}',
+            data=TransportPassengerSerializer(passenger).data)
+
+
+# ── Schedule tracking ─────────────────────────────
+class TransportTrackingView(APIView):
+    """
+    GET  /api/v1/transport/schedules/<pk>/tracking/
+    POST /api/v1/transport/schedules/<pk>/tracking/
+    """
+    permission_classes = []
+
+    def get(self, request, pk):
+        tracking = TransportScheduleTracking.objects.filter(schedule_id=pk)
+        return api_response('success', 'Tracking retrieved',
+            data=TransportScheduleTrackingSerializer(tracking, many=True).data)
+
+    def post(self, request, pk):
+        if not request.user.is_authenticated:
+            return api_response('error', 'Authentication required',
+                http_status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            schedule = TransportSchedule.objects.get(pk=pk)
+        except TransportSchedule.DoesNotExist:
+            return api_response('error', 'Schedule not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        log = TransportScheduleTracking.objects.create(
+            schedule=schedule,
+            status=request.data.get('status', ''),
+            description=request.data.get('description', ''),
+            city=request.data.get('city', ''),
+            reported_by=request.user,
+        )
+        return api_response('success', 'Tracking updated',
+            data=TransportScheduleTrackingSerializer(log).data,
+            http_status=status.HTTP_201_CREATED)
+
+
+# ── Rate transport ────────────────────────────────
+class TransportRatingView(APIView):
+    """
+    POST /api/v1/transport/bookings/<pk>/rate/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        try:
+            booking = TransportBooking.objects.get(
+                pk=pk, customer=request.user, status='completed')
+        except TransportBooking.DoesNotExist:
+            return api_response('error', 'Booking not found or not completed',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        if hasattr(booking, 'rating'):
+            return api_response('error', 'Already rated',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        rating = TransportRating.objects.create(
+            booking=booking,
+            overall_rating=request.data.get('overall_rating', 5),
+            driver_rating=request.data.get('driver_rating'),
+            vehicle_rating=request.data.get('vehicle_rating'),
+            review=request.data.get('review', ''),
+        )
+        return api_response('success', 'Rating submitted',
+            data=TransportRatingSerializer(rating).data,
+            http_status=status.HTTP_201_CREATED)
+
+
+# ── Business: manage vehicles ─────────────────────
+class TransportVehicleView(APIView):
+    """
+    GET  /api/v1/transport/vehicles/?business_id=1
+    POST /api/v1/transport/vehicles/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        business_id = request.query_params.get('business_id')
+        qs = TransportVehicle.objects.filter(is_active=True)
+        if business_id:
+            qs = qs.filter(business_id=business_id)
+        return api_response('success', 'Vehicles retrieved',
+            data=TransportVehicleSerializer(qs, many=True).data)
+
+    def post(self, request):
+        serializer = TransportVehicleSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Vehicle added',
+                data=serializer.data,
+                http_status=status.HTTP_201_CREATED)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+
+# ── Cancellation policy ───────────────────────────
+class TransportCancellationPolicyView(APIView):
+    """
+    GET  /api/v1/transport/cancellation-policy/?business_id=1
+    POST /api/v1/transport/cancellation-policy/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        business_id = request.query_params.get('business_id')
+        qs = TransportCancellationPolicy.objects.all()
+        if business_id:
+            qs = qs.filter(business_id=business_id)
+        return api_response('success', 'Policies retrieved',
+            data=TransportCancellationPolicySerializer(qs, many=True).data)
+
+    def post(self, request):
+        serializer = TransportCancellationPolicySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Policy created',
+                data=serializer.data,
+                http_status=status.HTTP_201_CREATED)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)

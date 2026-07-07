@@ -785,3 +785,198 @@ class AppointmentSettings(TimeStampedModel):
     def __str__(self):
         return f"Appointment Settings — {self.business.name}"
 
+class RideSettings(TimeStampedModel):
+    """
+    Settings for businesses that offer rides or transport.
+    Covers: taxi, ride-hailing, bus, ferry, airline, shuttle.
+    """
+    RIDE_TYPE_CHOICES = (
+        ('ride_hailing',  'Ride Hailing (Uber-style)'),
+        ('bus',           'Bus / Coach'),
+        ('minibus',       'Minibus / Sprinter'),
+        ('ferry',         'Ferry / Boat'),
+        ('airline',       'Airline'),
+        ('train',         'Train'),
+        ('shuttle',       'Shuttle Service'),
+        ('charter',       'Charter / Hire'),
+    )
+
+    business = models.OneToOneField(
+        Business,
+        on_delete=models.CASCADE,
+        related_name='ride_settings',
+    )
+    subtype = models.ForeignKey(
+        'BusinessSubtype',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        limit_choices_to={'interaction_type': 'rides'},
+        related_name='ride_businesses',
+    )
+    ride_type = models.CharField(
+        max_length=20,
+        choices=RIDE_TYPE_CHOICES,
+        default='ride_hailing',
+    )
+    # Fleet info
+    fleet_size = models.IntegerField(
+        default=1,
+        help_text='Number of vehicles in fleet'
+    )
+    # Operating area
+    operating_cities = models.JSONField(
+        default=list, blank=True,
+        help_text='Cities where service is available'
+    )
+    operating_radius_km = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        null=True, blank=True,
+        help_text='Radius for ride-hailing'
+    )
+    # Booking
+    allows_advance_booking = models.BooleanField(default=True)
+    advance_booking_days   = models.IntegerField(default=30)
+    min_advance_hours      = models.IntegerField(default=1)
+    allows_instant_booking = models.BooleanField(default=True)
+    # Pricing
+    base_fare = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    per_km_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    # Cancellation
+    free_cancellation_minutes = models.IntegerField(
+        default=10,
+        help_text='Minutes after booking that cancellation is free'
+    )
+    cancellation_fee = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    # Payments
+    accepts_cash    = models.BooleanField(default=True)
+    accepts_card    = models.BooleanField(default=True)
+    accepts_wallet  = models.BooleanField(default=True)
+    accepts_transfer = models.BooleanField(default=False)
+    # Features
+    has_ac          = models.BooleanField(default=False)
+    has_wifi        = models.BooleanField(default=False)
+    allows_luggage  = models.BooleanField(default=True)
+    max_luggage_kg  = models.DecimalField(
+        max_digits=6, decimal_places=2, null=True, blank=True
+    )
+    luggage_fee_per_kg = models.DecimalField(
+        max_digits=8, decimal_places=2, default=0
+    )
+    # Safety
+    has_tracking    = models.BooleanField(default=False)
+    is_insured      = models.BooleanField(default=False)
+    requires_driver_kyc = models.BooleanField(default=True)
+
+    class Meta:
+        verbose_name_plural = 'Ride Settings'
+
+    def __str__(self):
+        return f"Ride Settings — {self.business.name}"
+
+
+class ShipmentSettings(TimeStampedModel):
+    """
+    Settings for logistics businesses on the marketplace.
+    e.g. DHL, GIG Logistics, Kevwe Logistics
+    """
+    SHIPMENT_TYPE_CHOICES = (
+        ('local',        'Local (same city)'),
+        ('interstate',   'Interstate'),
+        ('international','International'),
+        ('all',          'All'),
+    )
+
+    business = models.OneToOneField(
+        Business,
+        on_delete=models.CASCADE,
+        related_name='shipment_settings',
+    )
+    subtype = models.ForeignKey(
+        'BusinessSubtype',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        limit_choices_to={'interaction_type': 'scheduled_services'},
+        related_name='shipment_businesses',
+    )
+    shipment_type = models.CharField(
+        max_length=20,
+        choices=SHIPMENT_TYPE_CHOICES,
+        default='local',
+    )
+    # Coverage
+    operating_cities = models.JSONField(
+        default=list, blank=True,
+        help_text='Cities covered'
+    )
+    operating_states = models.JSONField(
+        default=list, blank=True,
+        help_text='States covered'
+    )
+    # Pricing
+    base_fee = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    per_kg_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    per_km_rate = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    express_multiplier = models.DecimalField(
+        max_digits=4, decimal_places=2, default=1.5,
+        help_text='Express delivery price multiplier'
+    )
+    # Pickup
+    offers_pickup = models.BooleanField(default=True)
+    pickup_fee = models.DecimalField(
+        max_digits=10, decimal_places=2, default=0
+    )
+    # Insurance
+    offers_insurance = models.BooleanField(default=False)
+    insurance_rate_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, default=1.0,
+        help_text='% of declared value charged as insurance fee'
+    )
+    # Limits
+    max_weight_kg = models.DecimalField(
+        max_digits=8, decimal_places=2, default=50
+    )
+    max_length_cm = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        null=True, blank=True
+    )
+    max_width_cm = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        null=True, blank=True
+    )
+    max_height_cm = models.DecimalField(
+        max_digits=8, decimal_places=2,
+        null=True, blank=True
+    )
+    # Delivery time
+    standard_days = models.IntegerField(
+        default=3, help_text='Standard delivery days'
+    )
+    express_days = models.IntegerField(
+        default=1, help_text='Express delivery days'
+    )
+    # Payments
+    accepts_cash_on_delivery = models.BooleanField(default=False)
+    accepts_card   = models.BooleanField(default=True)
+    accepts_wallet = models.BooleanField(default=True)
+    # Proof of delivery
+    requires_signature = models.BooleanField(default=False)
+    requires_photo     = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name_plural = 'Shipment Settings'
+
+    def __str__(self):
+        return f"Shipment Settings — {self.business.name}"
+

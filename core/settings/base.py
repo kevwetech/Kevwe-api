@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     'apps.kyc',
     'apps.services',
     'apps.staff',
+    'apps.appointments',
 ]
 
 MIDDLEWARE = [

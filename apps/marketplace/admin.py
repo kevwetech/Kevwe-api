@@ -5,6 +5,7 @@ from .models import (
     BookingSettings, ServiceSettings,
     BusinessHours, BusinessImage, BusinessDocument,
     BusinessSubtype, AppointmentSettings,
+    RideSettings, ShipmentSettings,
 )
 
 
@@ -185,3 +186,13 @@ class BusinessSubtypeAdmin(admin.ModelAdmin):
 @admin.register(AppointmentSettings)
 class AppointmentSettingsAdmin(admin.ModelAdmin):
     list_display = ['business', 'subtype', 'slot_duration_minutes']
+
+@admin.register(RideSettings)
+class RideSettingsAdmin(admin.ModelAdmin):
+    list_display = ['business', 'ride_type', 'fleet_size', 'allows_instant_booking']
+    list_filter  = ['ride_type']
+
+@admin.register(ShipmentSettings)
+class ShipmentSettingsAdmin(admin.ModelAdmin):
+    list_display = ['business', 'shipment_type', 'base_fee', 'offers_pickup', 'offers_insurance']
+    list_filter  = ['shipment_type']

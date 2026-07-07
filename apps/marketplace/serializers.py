@@ -4,7 +4,8 @@ from .models import (
     BusinessHours, BusinessImage, BusinessDocument,
     BusinessSettings, OrderSettings,
     BookingSettings, ServiceSettings,
-    BusinessSubtype, AppointmentSettings
+    BusinessSubtype, AppointmentSettings,
+    RideSettings,
 )
 
 
@@ -133,6 +134,28 @@ class AppointmentSettingsSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('id', 'business', 'created_at', 'updated_at')
 
+class RideSettingsSerializer(serializers.ModelSerializer):
+    subtype = BusinessSubtypeSerializer(read_only=True)
+    subtype_id = serializers.PrimaryKeyRelatedField(
+        queryset=BusinessSubtype.objects.filter(interaction_type='rides'),
+        source='subtype', write_only=True, required=False
+    )
+    class Meta:
+        model = RideSettings
+        fields = '__all__'
+        read_only_fields = ('id', 'business', 'created_at', 'updated_at')
+
+class ShipmentSettingsSerializer(serializers.ModelSerializer):
+    subtype = BusinessSubtypeSerializer(read_only=True)
+    subtype_id = serializers.PrimaryKeyRelatedField(
+        queryset=BusinessSubtype.objects.filter(interaction_type='scheduled_services'),
+        source='subtype', write_only=True, required=False
+    )
+    class Meta:
+        model = ShipmentSettings
+        fields = '__all__'
+        read_only_fields = ('id', 'business', 'created_at', 'updated_at')
+
 class BusinessSerializer(serializers.ModelSerializer):
     industry_name = serializers.CharField(
         source='industry.name', read_only=True
@@ -169,6 +192,8 @@ class BusinessSerializer(serializers.ModelSerializer):
     booking_settings = BookingSettingsSerializer(read_only=True)
     service_settings = ServiceSettingsSerializer(read_only=True)
     appointment_settings = AppointmentSettingsSerializer(read_only=True)
+    ride_settings = RideSettingsSerializer(read_only=True)
+    shipment_settings = ShipmentSettingsSerializer(read_only=True)
 
     class Meta:
         model = Business

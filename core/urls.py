@@ -57,6 +57,7 @@ urlpatterns = [
     path('api/v1/kyc/', include('apps.kyc.urls')),
     path('api/v1/services/', include('apps.services.urls')),
     path('api/v1/staff/', include('apps.staff.urls')),
+    path('api/v1/appointments/', include('apps.appointments.urls')),
 
     # API Docs
     path('api/schema/', SpectacularAPIView.as_view(), name='schema'),

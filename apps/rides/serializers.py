@@ -1,7 +1,13 @@
 from rest_framework import serializers
-from .models import Ride, RideVehicleType, RideTracking
-
-
+from .models import (
+    Ride, RideVehicleType, RideTracking,
+    TransportVehicle, TransportRoute, TransportStop,
+    TransportSchedule, ScheduleFare, TransportSeat,
+    TransportBooking, TransportPassenger,
+    TransportBoardingLog, TransportScheduleTracking,
+    TransportCancellationPolicy, TransportBaggage,
+    TransportRating,
+)
 class RideVehicleTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = RideVehicleType
@@ -163,4 +169,163 @@ class EstimateFareSerializer(serializers.Serializer):
     destination_lng = serializers.DecimalField(
         max_digits=9,
         decimal_places=6
+    )
+
+# ── Transport Vehicle ─────────────────────────────
+class TransportVehicleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransportVehicle
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Transport Stop ────────────────────────────────
+class TransportStopSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransportStop
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Transport Route ───────────────────────────────
+class TransportRouteSerializer(serializers.ModelSerializer):
+    business_name  = serializers.CharField(source='business.name', read_only=True)
+    stops          = TransportStopSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = TransportRoute
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Schedule Fare ─────────────────────────────────
+class ScheduleFareSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ScheduleFare
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Transport Seat ────────────────────────────────
+class TransportSeatSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransportSeat
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Transport Schedule ────────────────────────────
+class TransportScheduleSerializer(serializers.ModelSerializer):
+    route_name       = serializers.CharField(source='route.name', read_only=True)
+    origin           = serializers.CharField(source='route.origin', read_only=True)
+    destination      = serializers.CharField(source='route.destination', read_only=True)
+    transport_type   = serializers.CharField(source='route.transport_type', read_only=True)
+    business_name    = serializers.CharField(source='route.business.name', read_only=True)
+    available_seats  = serializers.IntegerField(read_only=True)
+    fares            = ScheduleFareSerializer(many=True, read_only=True)
+    seats            = TransportSeatSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = TransportSchedule
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Transport Passenger ───────────────────────────
+class TransportPassengerSerializer(serializers.ModelSerializer):
+    seat_number = serializers.CharField(source='seat.seat_number', read_only=True)
+
+    class Meta:
+        model = TransportPassenger
+        fields = '__all__'
+        read_only_fields = ('id', 'ticket_code', 'created_at', 'updated_at')
+
+
+# ── Transport Booking ─────────────────────────────
+class TransportBookingSerializer(serializers.ModelSerializer):
+    customer_name    = serializers.CharField(source='customer.full_name', read_only=True)
+    schedule_detail  = TransportScheduleSerializer(source='schedule', read_only=True)
+    passengers       = TransportPassengerSerializer(many=True, read_only=True)
+    passenger_count  = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = TransportBooking
+        fields = '__all__'
+        read_only_fields = (
+            'id', 'reference', 'status', 'payment_status',
+            'created_at', 'updated_at'
+        )
+
+
+# ── Boarding Log ──────────────────────────────────
+class TransportBoardingLogSerializer(serializers.ModelSerializer):
+    passenger_name = serializers.CharField(source='passenger.name', read_only=True)
+    scanned_by_name = serializers.CharField(source='scanned_by.full_name', read_only=True)
+
+    class Meta:
+        model = TransportBoardingLog
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Schedule Tracking ─────────────────────────────
+class TransportScheduleTrackingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransportScheduleTracking
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Cancellation Policy ───────────────────────────
+class TransportCancellationPolicySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransportCancellationPolicy
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Baggage ───────────────────────────────────────
+class TransportBaggageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransportBaggage
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Rating ────────────────────────────────────────
+class TransportRatingSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransportRating
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+
+# ── Input serializers ─────────────────────────────
+class BookTransportSerializer(serializers.Serializer):
+    """Input for booking transport tickets."""
+    schedule_id    = serializers.IntegerField()
+    passengers     = serializers.ListField(
+        child=serializers.DictField(),
+        min_length=1,
+        max_length=10,
+    )
+    payment_method = serializers.ChoiceField(
+        choices=['card', 'wallet', 'transfer'],
+        default='card'
+    )
+
+    # passenger dict fields:
+    # { name, phone, email, seat_class, seat_id (optional) }
+
+
+class SearchRouteSerializer(serializers.Serializer):
+    """Input for searching available routes."""
+    origin      = serializers.CharField()
+    destination = serializers.CharField()
+    date        = serializers.DateField()
+    passengers  = serializers.IntegerField(default=1, min_value=1, max_value=10)
+    seat_class  = serializers.ChoiceField(
+        choices=['economy', 'business', 'first', 'vip'],
+        default='economy',
+        required=False,
     )

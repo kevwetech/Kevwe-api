@@ -671,6 +671,75 @@ class AppointmentSettingsView(APIView):
             errors=serializer.errors,
             http_status=status.HTTP_400_BAD_REQUEST)
 
+class RideSettingsView(APIView):
+    """
+    GET/PATCH /api/v1/marketplace/businesses/<pk>/ride-settings/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from .serializers import RideSettingsSerializer
+        try:
+            business = Business.objects.get(pk=pk, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        settings_obj, _ = RideSettings.objects.get_or_create(business=business)
+        return api_response('success', 'Ride settings retrieved',
+            data=RideSettingsSerializer(settings_obj).data)
+
+    def patch(self, request, pk):
+        from .serializers import RideSettingsSerializer
+        try:
+            business = Business.objects.get(pk=pk, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        settings_obj, _ = RideSettings.objects.get_or_create(business=business)
+        serializer = RideSettingsSerializer(
+            settings_obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Ride settings updated',
+                data=serializer.data)
+        return api_response('error', 'Update failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+class ShipmentSettingsView(APIView):
+    """
+    GET/PATCH /api/v1/marketplace/businesses/<pk>/shipment-settings/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from .serializers import ShipmentSettingsSerializer
+        try:
+            business = Business.objects.get(pk=pk, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        settings_obj, _ = ShipmentSettings.objects.get_or_create(business=business)
+        return api_response('success', 'Shipment settings retrieved',
+            data=ShipmentSettingsSerializer(settings_obj).data)
+
+    def patch(self, request, pk):
+        from .serializers import ShipmentSettingsSerializer
+        try:
+            business = Business.objects.get(pk=pk, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        settings_obj, _ = ShipmentSettings.objects.get_or_create(business=business)
+        serializer = ShipmentSettingsSerializer(
+            settings_obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Shipment settings updated',
+                data=serializer.data)
+        return api_response('error', 'Update failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
 
 # ── Business Hours ────────────────────────────────────────
 
