@@ -12,6 +12,7 @@ from .models import (
     BusinessHours, BusinessImage, BusinessDocument,
     BusinessSettings, OrderSettings,
     BookingSettings, ServiceSettings,
+    AppointmentSettings, BusinessSubtype,
 )
 
 
@@ -628,6 +629,47 @@ class ServiceSettingsView(APIView):
             errors=serializer.errors,
             http_status=status.HTTP_400_BAD_REQUEST
         )
+
+class AppointmentSettingsView(APIView):
+    """
+    GET/PATCH - Appointment settings (slot duration, advance booking)
+    GET/PATCH /api/v1/marketplace/businesses/<pk>/appointment-settings/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        from .serializers import AppointmentSettingsSerializer
+        try:
+            business = Business.objects.get(pk=pk, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        settings_obj, _ = AppointmentSettings.objects.get_or_create(
+            business=business
+        )
+        return api_response('success', 'Appointment settings retrieved',
+            data=AppointmentSettingsSerializer(settings_obj).data)
+
+    def patch(self, request, pk):
+        from .serializers import AppointmentSettingsSerializer
+        try:
+            business = Business.objects.get(pk=pk, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        settings_obj, _ = AppointmentSettings.objects.get_or_create(
+            business=business
+        )
+        serializer = AppointmentSettingsSerializer(
+            settings_obj, data=request.data, partial=True
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Appointment settings updated',
+                data=serializer.data)
+        return api_response('error', 'Update failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
 
 
 # ── Business Hours ────────────────────────────────────────

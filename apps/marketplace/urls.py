@@ -12,6 +12,7 @@ from .views import (
     NearbyBusinessesView,
     AdminBusinessListView, AdminBusinessApproveView,
     AdminVerifyBusinessDocumentView,
+    AppointmentSettingsView,
 )
 
 urlpatterns = [
@@ -122,5 +123,9 @@ urlpatterns = [
         'admin/documents/<int:pk>/verify/',
         AdminVerifyBusinessDocumentView.as_view(),
         name='admin_verify_document'
+    ),
+    path('businesses/<int:pk>/appointment-settings/',
+    AppointmentSettingsView.as_view(),
+    name='appointment-settings'
     ),
 ]

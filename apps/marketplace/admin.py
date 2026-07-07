@@ -4,6 +4,7 @@ from .models import (
     BusinessSettings, OrderSettings,
     BookingSettings, ServiceSettings,
     BusinessHours, BusinessImage, BusinessDocument,
+    BusinessSubtype, AppointmentSettings,
 )
 
 
@@ -172,3 +173,15 @@ class BusinessDocumentAdmin(admin.ModelAdmin):
     list_filter = ('document_type', 'status')
     search_fields = ('business__name',)
     readonly_fields = ('reviewed_at',)
+
+
+@admin.register(BusinessSubtype)
+class BusinessSubtypeAdmin(admin.ModelAdmin):
+    list_display  = ['name', 'interaction_type', 'slug', 'is_active', 'order']
+    list_filter   = ['interaction_type', 'is_active']
+    prepopulated_fields = {'slug': ('name',)}
+    ordering = ['interaction_type', 'order']
+
+@admin.register(AppointmentSettings)
+class AppointmentSettingsAdmin(admin.ModelAdmin):
+    list_display = ['business', 'subtype', 'slot_duration_minutes']

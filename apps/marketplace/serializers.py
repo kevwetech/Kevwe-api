@@ -4,6 +4,7 @@ from .models import (
     BusinessHours, BusinessImage, BusinessDocument,
     BusinessSettings, OrderSettings,
     BookingSettings, ServiceSettings,
+    BusinessSubtype, AppointmentSettings
 )
 
 
@@ -83,27 +84,54 @@ class BusinessSettingsSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('id', 'business', 'created_at', 'updated_at')
 
+class BusinessSubtypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusinessSubtype
+        fields = ['id', 'name', 'slug', 'icon', 'interaction_type']
 
 class OrderSettingsSerializer(serializers.ModelSerializer):
+    subtype = BusinessSubtypeSerializer(read_only=True)
+    subtype_id = serializers.PrimaryKeyRelatedField(
+        queryset=BusinessSubtype.objects.filter(interaction_type='orders'),
+        source='subtype', write_only=True, required=False
+    )
     class Meta:
         model = OrderSettings
         fields = '__all__'
         read_only_fields = ('id', 'business', 'created_at', 'updated_at')
-
-
+    
 class BookingSettingsSerializer(serializers.ModelSerializer):
+    subtype = BusinessSubtypeSerializer(read_only=True)
+    subtype_id = serializers.PrimaryKeyRelatedField(
+        queryset=BusinessSubtype.objects.filter(interaction_type='bookings'),
+        source='subtype', write_only=True, required=False
+    )
     class Meta:
         model = BookingSettings
         fields = '__all__'
         read_only_fields = ('id', 'business', 'created_at', 'updated_at')
 
-
 class ServiceSettingsSerializer(serializers.ModelSerializer):
+    subtype = BusinessSubtypeSerializer(read_only=True)
+    subtype_id = serializers.PrimaryKeyRelatedField(
+        queryset=BusinessSubtype.objects.filter(interaction_type='services'),
+        source='subtype', write_only=True, required=False
+    )
     class Meta:
         model = ServiceSettings
         fields = '__all__'
         read_only_fields = ('id', 'business', 'created_at', 'updated_at')
 
+class AppointmentSettingsSerializer(serializers.ModelSerializer):
+    subtype = BusinessSubtypeSerializer(read_only=True)
+    subtype_id = serializers.PrimaryKeyRelatedField(
+        queryset=BusinessSubtype.objects.filter(interaction_type='appointments'),
+        source='subtype', write_only=True, required=False
+    )
+    class Meta:
+        model = AppointmentSettings
+        fields = '__all__'
+        read_only_fields = ('id', 'business', 'created_at', 'updated_at')
 
 class BusinessSerializer(serializers.ModelSerializer):
     industry_name = serializers.CharField(
@@ -140,6 +168,7 @@ class BusinessSerializer(serializers.ModelSerializer):
     order_settings = OrderSettingsSerializer(read_only=True)
     booking_settings = BookingSettingsSerializer(read_only=True)
     service_settings = ServiceSettingsSerializer(read_only=True)
+    appointment_settings = AppointmentSettingsSerializer(read_only=True)
 
     class Meta:
         model = Business
@@ -180,4 +209,4 @@ class CreateBusinessSerializer(serializers.Serializer):
     tags = serializers.ListField(
         child=serializers.CharField(), required=False
     )
-    
+

@@ -366,6 +366,15 @@ class OrderSettings(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name='order_settings'
     )
+    # In OrderSettings — replace order_type CharField with:
+    subtype = models.ForeignKey(
+        'BusinessSubtype',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        limit_choices_to={'interaction_type': 'orders'},
+        related_name='order_businesses',
+    )
+
     # Delivery
     delivery_enabled = models.BooleanField(default=True)
     delivery_fee = models.DecimalField(
@@ -428,19 +437,15 @@ class BookingSettings(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name='booking_settings'
     )
-    BOOKING_TYPE_CHOICES = (
-        ('hotel',        'Hotel'),
-        ('apartment',    'Apartment / Shortlet'),
-        ('event_center', 'Event Center'),
-        ('resort',       'Resort'),
-        ('guesthouse',   'Guest House'),
-        ('coworking',    'Coworking Space'),
+    # In BookingSettings — replace booking_type CharField with:
+    subtype = models.ForeignKey(
+        'BusinessSubtype',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        limit_choices_to={'interaction_type': 'bookings'},
+        related_name='booking_businesses',
     )
-    booking_type = models.CharField(
-        max_length=20,
-        choices=BOOKING_TYPE_CHOICES,
-        default='hotel',
-    )
+
     # Check-in / check-out (hotels, apartments)
     check_in_time = models.TimeField(
         null=True, blank=True,
@@ -523,6 +528,14 @@ class ServiceSettings(TimeStampedModel):
         Business,
         on_delete=models.CASCADE,
         related_name='service_settings'
+    )
+    # In ServiceSettings — add:
+    subtype = models.ForeignKey(
+        'BusinessSubtype',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        limit_choices_to={'interaction_type': 'services'},
+        related_name='service_businesses',
     )
     # Dispatch
     is_mobile = models.BooleanField(
@@ -717,3 +730,57 @@ class BusinessDocument(TimeStampedModel):
             f"{self.business.name} — "
             f"{self.document_type}"
         )
+
+class AppointmentSettings(models.Model):
+    business = models.OneToOneField(
+        Business,
+        on_delete=models.CASCADE,
+        related_name='appointment_settings',
+    )
+    subtype = models.ForeignKey(
+        'BusinessSubtype',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        limit_choices_to={'interaction_type': 'appointments'},
+        related_name='appointment_businesses',
+    )
+    slot_duration_minutes = models.IntegerField(default=30)
+    advance_booking_days  = models.IntegerField(default=30)
+    buffer_minutes        = models.IntegerField(default=0)
+    max_concurrent        = models.IntegerField(default=1)
+    requires_deposit      = models.BooleanField(default=False)
+    deposit_amount        = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    cancellation_hours    = models.IntegerField(default=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Appointment Settings — {self.business.name}"
+
+class BusinessSubtype(models.Model):
+    INTERACTION_TYPE_CHOICES = (
+        ('bookings',           'Bookings'),
+        ('orders',             'Orders'),
+        ('services',           'Services'),
+        ('appointments',       'Appointments'),
+        ('scheduled_services', 'Scheduled Services'),
+        ('rides',              'Rides'),
+    )
+    interaction_type = models.CharField(
+        max_length=30,
+        choices=INTERACTION_TYPE_CHOICES,
+    )
+    name   = models.CharField(max_length=100)
+    slug   = models.SlugField(unique=True)
+    icon   = models.CharField(max_length=10, blank=True)
+    description = models.TextField(blank=True)
+    is_active   = models.BooleanField(default=True)
+    order       = models.IntegerField(default=0)
+
+    class Meta:
+        ordering = ['interaction_type', 'order', 'name']
+        verbose_name = 'Business Subtype'
+        verbose_name_plural = 'Business Subtypes'
+
+    def __str__(self):
+        return f"{self.get_interaction_type_display()} → {self.name}"
