@@ -13,7 +13,7 @@ from .serializers import (
     CreateSavedAddressSerializer,
     ValidateAddressSerializer,
 )
-from .models import SavedAddress,
+from .models import SavedAddress, UserProfile
 from apps.common.ratelimit import UploadRateThrottle
 
 
@@ -240,38 +240,33 @@ class SetDefaultAddressView(APIView):
 
 
 class ValidateAddressView(APIView):
-    """
-    POST /api/v1/users/addresses/validate/
-    Checks if customer GPS is far from their saved default address.
-    Body: { current_lat, current_lng }
-    Returns: { is_far, distance_km, saved_address, suggestion }
-    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         import math
+        from .serializers import ValidateAddressSerializer
 
-        current_lat = request.data.get('current_lat')
-        current_lng = request.data.get('current_lng')
-
-        if not current_lat or not current_lng:
-            return api_response('error', 'current_lat and current_lng required',
+        serializer = ValidateAddressSerializer(data=request.data)
+        if not serializer.is_valid():
+            return api_response('error', 'Validation failed',
+                errors=serializer.errors,
                 http_status=status.HTTP_400_BAD_REQUEST)
 
-        # Get default saved address
+        data        = serializer.validated_data
+        current_lat = data['current_lat']
+        current_lng = data['current_lng']
+
         default = SavedAddress.objects.filter(
-            user=request.user,
-            is_active=True,
+            user=request.user, is_active=True,
             is_default=True,
             latitude__isnull=False,
             longitude__isnull=False,
         ).first()
 
         if not default:
-            return api_response('success', 'No saved address to validate',
+            return api_response('success', 'No saved address',
                 data={'is_far': False, 'saved_address': None})
 
-        # Haversine
         def haversine(lat1, lng1, lat2, lng2):
             R = 6371
             lat1, lng1, lat2, lng2 = map(
@@ -280,24 +275,20 @@ class ValidateAddressView(APIView):
             )
             dlat = lat2 - lat1
             dlng = lng2 - lng1
-            a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlng/2)**2
+            a = (math.sin(dlat/2)**2 +
+                 math.cos(lat1) * math.cos(lat2) *
+                 math.sin(dlng/2)**2)
             return R * 2 * math.asin(math.sqrt(a))
 
-        distance = haversine(
+        distance = round(haversine(
             current_lat, current_lng,
             default.latitude, default.longitude
-        )
-        distance = round(distance, 2)
-        is_far   = distance > 2  # Alert if > 2km away
+        ), 2)
+        is_far = distance > 2
 
         return api_response('success', 'Address validated', data={
-            'is_far':       is_far,
-            'distance_km':  distance,
-            'saved_address': {
-                'id':      default.id,
-                'label':   default.label,
-                'address': default.address,
-                'city':    default.city,
-            },
-            'suggestion': 'Use current location' if is_far else None,
+            'is_far':        is_far,
+            'distance_km':   distance,
+            'saved_address': SavedAddressSerializer(default).data,
+            'suggestion':    'Use current location' if is_far else None,
         })
