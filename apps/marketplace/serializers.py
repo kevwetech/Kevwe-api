@@ -5,7 +5,7 @@ from .models import (
     BusinessSettings, OrderSettings,
     BookingSettings, ServiceSettings,
     BusinessSubtype, AppointmentSettings,
-    RideSettings,
+    RideSettings, ShipmentSettings,
 )
 
 

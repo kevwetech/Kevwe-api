@@ -1224,8 +1224,8 @@ class UniversalSearchView(APIView):
                     'id': c.id,
                     'name': c.name,
                     'slug': c.slug,
-                    'industry_name': c.industry_name,
-                    'businesses_count': c.businesses_count,
+                    'industry_name': c.industry.name if c.industry_id else None,
+                    'businesses_count': Business.objects.filter(category=c, is_active=True).count(),
                     'url': f'/HOME/HTML/category.html?slug={c.slug}',
                 } for c in categories
             ],
@@ -1235,7 +1235,7 @@ class UniversalSearchView(APIView):
                     'id': i.id,
                     'name': i.name,
                     'slug': i.slug,
-                    'businesses_count': i.businesses_count,
+                    'businesses_count': Business.objects.filter(industry=i, is_active=True).count(),
                     'url': f'/HOME/HTML/industry.html?industry={i.slug}',
                 } for i in industries
             ],

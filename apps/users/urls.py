@@ -5,6 +5,10 @@ from .views import (
     AvatarUploadView,
     ChangePasswordView,
     DeleteAccountView,
+    SavedAddressListView, 
+    SavedAddressDetailView,
+    SetDefaultAddressView, 
+    ValidateAddressView,
 )
 
 urlpatterns = [
@@ -13,4 +17,8 @@ urlpatterns = [
     path('me/avatar/', AvatarUploadView.as_view(), name='avatar_upload'),
     path('me/change-password/', ChangePasswordView.as_view(), name='change_password'),
     path('me/delete/', DeleteAccountView.as_view(), name='delete_account'),
+    path('addresses/',                  SavedAddressListView.as_view(),   name='saved_addresses'),
+    path('addresses/<int:pk>/',         SavedAddressDetailView.as_view(), name='address_detail'),
+    path('addresses/<int:pk>/default/', SetDefaultAddressView.as_view(),  name='set_default_address'),
+    path('addresses/validate/',         ValidateAddressView.as_view(),    name='validate_address'),
 ]

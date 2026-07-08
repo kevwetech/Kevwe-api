@@ -285,3 +285,4 @@ class PasswordResetConfirmView(APIView):
             errors=serializer.errors,
             http_status=status.HTTP_400_BAD_REQUEST
         )
+

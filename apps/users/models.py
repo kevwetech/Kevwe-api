@@ -1,5 +1,6 @@
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.db import models
+from apps.common.models import TimeStampedModel
 
 
 class CustomUserManager(BaseUserManager):
@@ -73,3 +74,69 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     @property
     def is_customer(self):
         return self.role == 'customer'
+
+
+class UserProfile(TimeStampedModel):
+    """Extended profile info for customers."""
+    user = models.OneToOneField(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='profile',
+    )
+    date_of_birth = models.DateField(null=True, blank=True)
+    gender = models.CharField(
+        max_length=10,
+        choices=(('male','Male'),('female','Female'),('other','Other')),
+        blank=True, null=True,
+    )
+    bio = models.TextField(blank=True, null=True)
+    referral_code = models.CharField(max_length=20, unique=True, blank=True, null=True)
+    referred_by = models.ForeignKey(
+        CustomUser,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='referrals',
+    )
+    push_notifications = models.BooleanField(default=True)
+    email_notifications = models.BooleanField(default=True)
+    sms_notifications = models.BooleanField(default=True)
+    preferred_language = models.CharField(max_length=10, default='en')
+
+    def __str__(self):
+        return f"Profile — {self.user.email}"
+
+
+class SavedAddress(TimeStampedModel):
+    """Customer saved delivery/pickup addresses."""
+    ADDRESS_TYPE_CHOICES = (
+        ('home',  'Home'),
+        ('work',  'Work'),
+        ('other', 'Other'),
+    )
+    user = models.ForeignKey(
+        CustomUser,
+        on_delete=models.CASCADE,
+        related_name='saved_addresses',
+    )
+    label     = models.CharField(max_length=20, choices=ADDRESS_TYPE_CHOICES, default='home')
+    name      = models.CharField(max_length=255, blank=True, null=True, help_text='e.g. Mum\'s house')
+    address   = models.TextField()
+    city      = models.CharField(max_length=100, blank=True, null=True)
+    state     = models.CharField(max_length=100, blank=True, null=True)
+    latitude  = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    is_default = models.BooleanField(default=False)
+    is_active  = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['-is_default', '-created_at']
+
+    def __str__(self):
+        return f"{self.user.full_name} — {self.label}: {self.address[:50]}"
+
+    def save(self, *args, **kwargs):
+        if self.is_default:
+            SavedAddress.objects.filter(
+                user=self.user, is_default=True
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)

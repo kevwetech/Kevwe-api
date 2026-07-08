@@ -1,5 +1,8 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
+from .models import SavedAddress, UserProfile
+
+
 
 User = get_user_model()
 
@@ -77,3 +80,29 @@ class ChangePasswordSerializer(serializers.Serializer):
                 {'password': 'Passwords do not match'}
             )
         return attrs
+
+
+class SavedAddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SavedAddress
+        fields = [
+            'id', 'label', 'name', 'address',
+            'city', 'state', 'latitude', 'longitude',
+            'is_default', 'is_active', 'created_at',
+        ]
+        read_only_fields = ('id', 'created_at')
+
+
+class CreateSavedAddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SavedAddress
+        fields = [
+            'label', 'name', 'address',
+            'city', 'state', 'latitude', 'longitude',
+            'is_default',
+        ]
+
+
+class ValidateAddressSerializer(serializers.Serializer):
+    current_lat = serializers.DecimalField(max_digits=9, decimal_places=6)
+    current_lng = serializers.DecimalField(max_digits=9, decimal_places=6)

@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import CustomUser
+from .models import CustomUser, UserProfile, SavedAddress
+
 
 
 @admin.register(CustomUser)
@@ -30,3 +31,13 @@ class CustomUserAdmin(UserAdmin):
             'fields': ('email', 'full_name', 'password1', 'password2', 'role'),
         }),
     )
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'gender', 'date_of_birth', 'referral_code']
+
+@admin.register(SavedAddress)
+class SavedAddressAdmin(admin.ModelAdmin):
+    list_display = ['user', 'label', 'name', 'city', 'is_default', 'is_active']
+    list_filter  = ['label', 'is_default']
