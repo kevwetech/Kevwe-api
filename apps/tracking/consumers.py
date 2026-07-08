@@ -541,3 +541,316 @@ class DriverShipmentConsumer(AsyncWebsocketConsumer):
             shipment.save()
         except Shipment.DoesNotExist:
             pass
+
+class BookingTrackingConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket for booking status updates.
+    Customer connects with booking reference.
+    Connect: ws://localhost:8000/ws/bookings/{reference}/
+    """
+
+    async def connect(self):
+        self.reference = self.scope['url_route']['kwargs']['reference']
+        self.room_group_name = f'booking_{self.reference}'
+
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        await self.accept()
+
+        await self.send(text_data=json.dumps({
+            'type': 'connection_established',
+            'reference': self.reference,
+            'message': f'Connected to booking {self.reference}',
+            'timestamp': str(timezone.now()),
+        }))
+
+        # Send current booking status
+        booking_data = await self.get_booking_data(self.reference)
+        if booking_data:
+            await self.send(text_data=json.dumps({
+                'type': 'booking_status',
+                'data': booking_data,
+            }))
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        if data.get('type') == 'ping':
+            await self.send(text_data=json.dumps({
+                'type': 'pong',
+                'timestamp': str(timezone.now()),
+            }))
+        elif data.get('type') == 'get_status':
+            booking_data = await self.get_booking_data(self.reference)
+            if booking_data:
+                await self.send(text_data=json.dumps({
+                    'type': 'booking_status',
+                    'data': booking_data,
+                }))
+
+    async def booking_update(self, event):
+        """Receive booking update and send to WebSocket."""
+        await self.send(text_data=json.dumps({
+            'type': 'booking_update',
+            'status': event.get('status'),
+            'message': event.get('message', ''),
+            'check_in_code': event.get('check_in_code'),
+            'timestamp': event.get('timestamp', str(timezone.now())),
+        }))
+
+    @database_sync_to_async
+    def get_booking_data(self, reference):
+        try:
+            from apps.bookings.models import Booking
+            booking = Booking.objects.select_related(
+                'business', 'customer'
+            ).get(reference=reference)
+            return {
+                'reference':    booking.reference,
+                'status':       booking.status,
+                'business_name': booking.business.name if booking.business_id else None,
+                'business_address': booking.business.address if booking.business_id else None,
+                'business_lat': str(booking.business.latitude) if booking.business_id and booking.business.latitude else None,
+                'business_lng': str(booking.business.longitude) if booking.business_id and booking.business.longitude else None,
+                'check_in_time': str(booking.check_in) if hasattr(booking, 'check_in') and booking.check_in else None,
+                'check_out_time': str(booking.check_out) if hasattr(booking, 'check_out') and booking.check_out else None,
+            }
+        except Exception:
+            return None
+
+
+class AppointmentTrackingConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket for appointment status updates.
+    Customer connects with appointment reference.
+    Connect: ws://localhost:8000/ws/appointments/{reference}/
+    """
+
+    async def connect(self):
+        self.reference = self.scope['url_route']['kwargs']['reference']
+        self.room_group_name = f'appointment_{self.reference}'
+
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        await self.accept()
+
+        await self.send(text_data=json.dumps({
+            'type': 'connection_established',
+            'reference': self.reference,
+            'message': f'Connected to appointment {self.reference}',
+            'timestamp': str(timezone.now()),
+        }))
+
+        appointment_data = await self.get_appointment_data(self.reference)
+        if appointment_data:
+            await self.send(text_data=json.dumps({
+                'type': 'appointment_status',
+                'data': appointment_data,
+            }))
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        if data.get('type') == 'ping':
+            await self.send(text_data=json.dumps({
+                'type': 'pong',
+                'timestamp': str(timezone.now()),
+            }))
+        elif data.get('type') == 'check_in':
+            # Customer presents check-in code
+            code = data.get('check_in_code')
+            result = await self.process_check_in(self.reference, code)
+            await self.send(text_data=json.dumps({
+                'type': 'check_in_result',
+                'success': result['success'],
+                'message': result['message'],
+                'timestamp': str(timezone.now()),
+            }))
+            if result['success']:
+                # Notify business dashboard
+                await self.channel_layer.group_send(
+                    f'appointment_{self.reference}',
+                    {
+                        'type': 'appointment_update',
+                        'status': 'checked_in',
+                        'message': 'Customer has checked in',
+                        'timestamp': str(timezone.now()),
+                    }
+                )
+
+    async def appointment_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'appointment_update',
+            'status': event.get('status'),
+            'message': event.get('message', ''),
+            'timestamp': event.get('timestamp', str(timezone.now())),
+        }))
+
+    @database_sync_to_async
+    def get_appointment_data(self, reference):
+        try:
+            from apps.appointments.models import Appointment
+            appt = Appointment.objects.select_related(
+                'business', 'service', 'staff', 'customer'
+            ).get(reference=reference)
+            return {
+                'reference':      appt.reference,
+                'status':         appt.status,
+                'check_in_code':  appt.check_in_code,
+                'date':           str(appt.date),
+                'start_time':     str(appt.start_time),
+                'end_time':       str(appt.end_time),
+                'service_name':   appt.service_name,
+                'staff_name':     appt.staff_name,
+                'business_name':  appt.business.name,
+                'business_address': appt.business.address,
+                'business_lat':   str(appt.business.latitude) if appt.business.latitude else None,
+                'business_lng':   str(appt.business.longitude) if appt.business.longitude else None,
+                'business_phone': appt.business.phone,
+            }
+        except Exception:
+            return None
+
+    @database_sync_to_async
+    def process_check_in(self, reference, code):
+        try:
+            from apps.appointments.models import Appointment, AppointmentTracking
+            from django.utils import timezone as tz
+            appt = Appointment.objects.get(reference=reference)
+            if appt.check_in_code != code:
+                return {'success': False, 'message': 'Invalid check-in code'}
+            if appt.status != 'confirmed':
+                return {'success': False, 'message': f'Cannot check in — status is {appt.status}'}
+            appt.status = 'checked_in'
+            appt.checked_in_at = tz.now()
+            appt.save()
+            AppointmentTracking.objects.create(
+                appointment=appt,
+                status='checked_in',
+                note='Customer checked in via app',
+            )
+            return {'success': True, 'message': 'Checked in successfully'}
+        except Exception as e:
+            return {'success': False, 'message': str(e)}
+
+class ServiceTrackingConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket for scheduled service / home service tracking.
+    Provider travels to customer — track their location.
+    Connect: ws://localhost:8000/ws/services/{reference}/
+    """
+
+    async def connect(self):
+        self.reference = self.scope['url_route']['kwargs']['reference']
+        self.room_group_name = f'service_{self.reference}'
+
+        await self.channel_layer.group_add(
+            self.room_group_name,
+            self.channel_name
+        )
+        await self.accept()
+
+        await self.send(text_data=json.dumps({
+            'type': 'connection_established',
+            'reference': self.reference,
+            'message': f'Connected to service {self.reference}',
+            'timestamp': str(timezone.now()),
+        }))
+
+        service_data = await self.get_service_data(self.reference)
+        if service_data:
+            await self.send(text_data=json.dumps({
+                'type': 'service_status',
+                'data': service_data,
+            }))
+
+    async def disconnect(self, close_code):
+        await self.channel_layer.group_discard(
+            self.room_group_name,
+            self.channel_name
+        )
+
+    async def receive(self, text_data):
+        data = json.loads(text_data)
+        if data.get('type') == 'ping':
+            await self.send(text_data=json.dumps({
+                'type': 'pong',
+                'timestamp': str(timezone.now()),
+            }))
+        elif data.get('type') == 'location_update':
+            # Provider sends their location
+            lat = data.get('latitude')
+            lng = data.get('longitude')
+            await self.update_provider_location(self.reference, lat, lng)
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type': 'service_update',
+                    'status': 'en_route',
+                    'provider_lat': str(lat),
+                    'provider_lng': str(lng),
+                    'message': 'Provider location updated',
+                    'timestamp': str(timezone.now()),
+                }
+            )
+
+    async def service_update(self, event):
+        await self.send(text_data=json.dumps({
+            'type': 'service_update',
+            'status': event.get('status'),
+            'provider_lat': event.get('provider_lat'),
+            'provider_lng': event.get('provider_lng'),
+            'message': event.get('message', ''),
+            'timestamp': event.get('timestamp', str(timezone.now())),
+        }))
+
+    @database_sync_to_async
+    def get_service_data(self, reference):
+        try:
+            from apps.services.models import ServiceRequest
+            req = ServiceRequest.objects.select_related(
+                'service', 'customer', 'provider'
+            ).get(reference=reference)
+            return {
+                'reference':      req.reference,
+                'status':         req.status,
+                'service_name':   req.service.name if req.service_id else None,
+                'provider_name':  req.provider.business_name if req.provider_id else None,
+                'provider_phone': req.provider.user.phone if req.provider_id else None,
+                'provider_lat':   str(req.provider.current_lat) if req.provider_id and req.provider.current_lat else None,
+                'provider_lng':   str(req.provider.current_lng) if req.provider_id and req.provider.current_lng else None,
+                'location_address': req.location_address,
+                'location_lat':   str(req.location_lat),
+                'location_lng':   str(req.location_lng),
+            }
+        except Exception:
+            return None
+
+    @database_sync_to_async
+    def update_provider_location(self, reference, lat, lng):
+        try:
+            from apps.services.models import ServiceRequest
+            from apps.services.models import ServiceProvider
+            req = ServiceRequest.objects.get(reference=reference)
+            if req.provider_id:
+                provider = req.provider
+                provider.current_lat = lat
+                provider.current_lng = lng
+                provider.last_location_update = timezone.now()
+                provider.save()
+        except Exception:
+            pass
