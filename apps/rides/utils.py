@@ -57,3 +57,26 @@ def find_available_driver(
     if nearby:
         return nearby[0]['driver']
     return None
+
+def find_available_driver(
+    pickup_lat,
+    pickup_lng,
+    vehicle_type=None,
+    business=None,
+):
+    """
+    Find nearest available driver.
+    business=None → any platform driver
+    business=X    → only that company's fleet
+    """
+    from apps.drivers.utils import find_nearby_drivers
+    nearby = find_nearby_drivers(
+        pickup_lat,
+        pickup_lng,
+        radius_km=10,
+        vehicle_type=None,
+        business=business,
+    )
+    if nearby:
+        return nearby[0]['driver']
+    return None

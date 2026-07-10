@@ -185,6 +185,28 @@ class RequestRideView(APIView):
                 payment_method=data.get('payment_method', 'cash'),
                 status='accepted' if driver else 'searching',
             )
+            # Get business (company page booking)
+            business = None
+            if data.get('business_id'):
+                from apps.marketplace.models import Business
+                try:
+                    business = Business.objects.get(
+                        pk=data['business_id'],
+                        status='active', is_active=True,
+                    )
+                except Business.DoesNotExist:
+                    return api_response(
+                        'error', 'Business not found',
+                        http_status=status.HTTP_404_NOT_FOUND
+                    )
+
+            # Find nearest driver (company-scoped if business page)
+            driver = find_available_driver(
+                data['pickup_lat'],
+                data['pickup_lng'],
+                vehicle_type=vehicle_type,
+                business=business,
+            )
 
             if driver:
                 ride.accepted_at = timezone.now()

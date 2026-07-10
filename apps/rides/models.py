@@ -46,6 +46,15 @@ class Ride(TimeStampedModel):
         ('paid',   'Paid'),
     )
 
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='rides',
+        help_text='Company page the ride was booked from. '
+                  'Null = marketplace-wide booking.'
+    )
+
     rider        = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='rides')
     driver       = models.ForeignKey(DriverProfile, on_delete=models.SET_NULL, null=True, blank=True, related_name='rides')
     vehicle_type = models.ForeignKey(RideVehicleType, on_delete=models.SET_NULL, null=True, blank=True)

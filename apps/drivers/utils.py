@@ -92,3 +92,38 @@ def calculate_fare(distance_km, duration_minutes, vehicle_type=None):
     )
 
     return max(fare, MINIMUM_FARE)
+
+def find_nearby_drivers(lat, lng, radius_km=5, vehicle_type=None, business=None):
+    """
+    Find available drivers within radius.
+    business=None → all platform drivers (marketplace-wide)
+    business=X    → only that company's drivers (company page booking)
+    """
+    drivers = DriverProfile.objects.filter(
+        is_available=True,
+        is_online=True,
+        status='verified',
+        current_lat__isnull=False,
+        current_lng__isnull=False,
+    )
+    if business:
+        drivers = drivers.filter(business=business)
+    if vehicle_type:
+        drivers = drivers.filter(
+            active_vehicle__vehicle_type=vehicle_type
+        )
+    nearby = []
+    for driver in drivers:
+        distance = calculate_distance(
+            lat, lng,
+            driver.current_lat,
+            driver.current_lng
+        )
+        if distance <= radius_km:
+            nearby.append({
+                'driver': driver,
+                'distance_km': round(distance, 2),
+                'eta_minutes': round(distance * 3)
+            })
+    nearby.sort(key=lambda x: x['distance_km'])
+    return nearby

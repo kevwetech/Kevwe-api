@@ -114,6 +114,14 @@ class DriverProfile(TimeStampedModel):
         ('suspended', 'Suspended'),
         ('rejected', 'Rejected'),
     )
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='drivers',
+        help_text='Ride/logistics company this driver belongs to. '
+                  'Null = independent platform driver.'
+    )
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
