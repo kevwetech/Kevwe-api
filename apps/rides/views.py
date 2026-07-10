@@ -224,7 +224,29 @@ class RequestRideView(APIView):
                     pass
 
                 send_ride_confirmation_email(ride)
-                
+            
+            # ── Send confirmation with start code + tracking link ──
+            try:
+                from apps.notifications.utils import send_notification
+                tracking_url = f'/HOME/HTML/track.html?type=ride&id={ride.id}'
+                send_notification(
+                    user=request.user,
+                    title='Ride Requested 🚗',
+                    message=(
+                        f'Your ride {ride.reference} has been requested. '
+                        f'Give your driver this start code: {ride.start_code}. '
+                        f'Track your ride: {tracking_url}'
+                    ),
+                    notification_type='system',
+                    data={
+                        'ride_id': ride.id,
+                        'reference': ride.reference,
+                        'start_code': ride.start_code,
+                        'tracking_url': tracking_url,
+                    },
+                )
+            except Exception:
+                pass
 
             return api_response(
                 'success',
@@ -239,6 +261,7 @@ class RequestRideView(APIView):
             errors=serializer.errors,
             http_status=status.HTTP_400_BAD_REQUEST
         )
+
 
 
 class RideDetailView(APIView):
@@ -766,6 +789,32 @@ class BookTransportView(APIView):
                 amount=p['amount'],
             )
             passenger.generate_ticket_code()
+        # ── Send ticket notification ──
+        try:
+            from apps.notifications.utils import send_notification
+            tracking_url = f'/HOME/HTML/track.html?type=transport&ref={booking.reference}'
+            ticket_codes = ', '.join(
+                p.ticket_code for p in booking.passengers.all()
+            )
+            send_notification(
+                user=request.user,
+                title='Ticket Booked 🎫',
+                message=(
+                    f'Your transport booking {booking.reference} is confirmed. '
+                    f'Ticket code(s): {ticket_codes}. '
+                    f'Show at boarding. Track: {tracking_url}'
+                ),
+                notification_type='system',
+                data={
+                    'booking_id': booking.id,
+                    'reference': booking.reference,
+                    'ticket_codes': ticket_codes,
+                    'tracking_url': tracking_url,
+                },
+            )
+        except Exception:
+            pass
+        
 
         return api_response(
             'success', 'Booking created successfully',

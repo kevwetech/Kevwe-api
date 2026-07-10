@@ -348,6 +348,29 @@ class BookAppointmentView(APIView):
             note='Appointment created',
             updated_by=request.user,
         )
+        # ── Send confirmation with tracking link + check-in code ──
+        try:
+            from apps.notifications.utils import send_notification
+            tracking_url = f'/HOME/HTML/track.html?type=appointment&ref={appointment.reference}'
+            send_notification(
+                user=request.user,
+                title='Appointment Booked ✅',
+                message=(
+                    f'Your {appointment.service_name} appointment is booked for '
+                    f'{appointment.date} at {appointment.start_time}. '
+                    f'Check-in code: {appointment.check_in_code}. '
+                    f'Track your appointment: {tracking_url}'
+                ),
+                notification_type='system',
+                data={
+                    'appointment_id': appointment.id,
+                    'reference': appointment.reference,
+                    'check_in_code': appointment.check_in_code,
+                    'tracking_url': tracking_url,
+                },
+            )
+        except Exception:
+            pass
 
         return api_response('success', 'Appointment booked successfully',
             data=AppointmentSerializer(appointment).data,

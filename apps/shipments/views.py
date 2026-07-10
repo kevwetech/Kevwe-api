@@ -279,6 +279,28 @@ class ShipmentListCreateView(APIView):
             # Send confirmation email
             send_shipment_confirmation_email(shipment)
 
+            # ── Send tracking notification ──
+            try:
+                from apps.notifications.utils import send_notification
+                tracking_url = f'/HOME/HTML/track.html?type=shipment&tracking={shipment.tracking_number}'
+                send_notification(
+                    user=request.user,
+                    title='Shipment Created 📦',
+                    message=(
+                        f'Your shipment {shipment.tracking_number} has been created. '
+                        f'Track it live: {tracking_url}. '
+                        f'You will generate a delivery code when the driver arrives.'
+                    ),
+                    notification_type='system',
+                    data={
+                        'shipment_id': shipment.id,
+                        'tracking_number': shipment.tracking_number,
+                        'tracking_url': tracking_url,
+                    },
+                )
+            except Exception:
+                pass
+
             return api_response(
                 'success',
                 'Shipment created successfully',
