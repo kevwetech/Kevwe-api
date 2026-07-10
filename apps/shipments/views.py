@@ -292,7 +292,6 @@ class ShipmentListCreateView(APIView):
                         business=business,
                         amount=price,
                         interaction_ref=shipment.tracking_number,
-                        auto_release_days=3,
                     )
                 except Exception as e:
                     print(f"Escrow hold error: {e}")
@@ -825,3 +824,97 @@ class GenerateDeliveryOTPView(APIView):
 
         return api_response('success', 'Delivery OTP generated',
             data={'otp': otp})
+
+
+
+class MarkDeliveredView(APIView):
+    """
+    POST /api/v1/shipments/<pk>/mark-delivered/
+    Driver marks package delivered WITHOUT recipient OTP.
+    Requires GPS proof (within 200m) + optional photo.
+    Starts the 3-day auto-release countdown.
+    Body: { "driver_lat": ..., "driver_lng": ..., "delivery_photo": <file> }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.utils import timezone
+        from apps.drivers.utils import calculate_distance
+
+        try:
+            shipment = Shipment.objects.get(pk=pk)
+        except Shipment.DoesNotExist:
+            return api_response('error', 'Shipment not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        if not shipment.driver or shipment.driver.user != request.user:
+            return api_response('error', 'Only the assigned driver can mark delivery',
+                http_status=status.HTTP_403_FORBIDDEN)
+
+        if shipment.status == 'delivered':
+            return api_response('error', 'Already delivered',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        # ── GPS geofence check (within 200m of delivery address) ──
+        driver_lat = request.data.get('driver_lat')
+        driver_lng = request.data.get('driver_lng')
+
+        if not driver_lat or not driver_lng:
+            return api_response('error',
+                'GPS location required to mark delivery',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        if shipment.delivery_lat and shipment.delivery_lng:
+            distance_km = calculate_distance(
+                float(driver_lat), float(driver_lng),
+                float(shipment.delivery_lat), float(shipment.delivery_lng),
+            )
+            if distance_km > 0.2:  # 200 meters
+                return api_response('error',
+                    f'You are {round(distance_km * 1000)}m from the delivery '
+                    f'address. You must be within 200m to mark as delivered.',
+                    http_status=status.HTTP_400_BAD_REQUEST)
+
+        # ── Save delivery evidence ──
+        shipment.status = 'delivered'
+        shipment.delivered_at = timezone.now()
+        if request.FILES.get('delivery_photo'):
+            shipment.delivery_photo = request.FILES['delivery_photo']
+        shipment.save()
+
+        ShipmentTracking.objects.create(
+            shipment=shipment,
+            status='delivered',
+            description=f'Marked delivered by driver (GPS verified within 200m)',
+            latitude=driver_lat,
+            longitude=driver_lng,
+            updated_by=request.user,
+        )
+
+        # ── Start 3-day auto-release countdown (fallback) ──
+        from apps.payments.escrow import start_release_countdown
+        start_release_countdown('shipment', shipment.id, days=3)
+
+        # ── Notify recipient/sender ──
+        try:
+            from apps.notifications.utils import send_notification
+            send_notification(
+                user=shipment.sender,
+                title='Package Delivered 📦',
+                message=(
+                    f'Shipment {shipment.tracking_number} was marked delivered. '
+                    f'Confirm with your delivery code, or if you did NOT receive it, '
+                    f'open a dispute within 3 days. Otherwise payment releases '
+                    f'automatically.'
+                ),
+                notification_type='system',
+                data={'shipment_id': shipment.id,
+                      'tracking_number': shipment.tracking_number},
+            )
+        except Exception:
+            pass
+
+        return api_response('success',
+            'Delivery marked. Awaiting recipient confirmation or 3-day auto-release.',
+            data={'tracking_number': shipment.tracking_number,
+                  'status': shipment.status})

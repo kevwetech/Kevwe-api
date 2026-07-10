@@ -8,8 +8,8 @@ from .views import (
     AssignDriverView,
     EstimateShipmentPriceView,
     VerifyShipmentDeliveryView, 
-    GenerateDeliveryOTPView
-
+    GenerateDeliveryOTPView,
+    MarkDeliveredView
 )
 
 urlpatterns = [
@@ -22,7 +22,7 @@ urlpatterns = [
     path('track/<str:tracking_number>/', TrackShipmentView.as_view(), name='track_shipment'),
     path('<int:pk>/generate-otp/', GenerateDeliveryOTPView.as_view(), name='generate_delivery_otp'),
     path('<int:pk>/verify-delivery/', VerifyShipmentDeliveryView.as_view(), name='verify_delivery'),
-
+    path('<int:pk>/mark-delivered/', MarkDeliveredView.as_view(), name='mark_delivered'),
     # Admin endpoints
     path('admin/', AdminShipmentListView.as_view(), name='admin_shipments'),
     path('admin/<int:pk>/', AdminShipmentUpdateView.as_view(), name='admin_shipment_update'),

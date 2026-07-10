@@ -253,3 +253,36 @@ def resolve_dispute(reference, resolution, actor=None, ip=None, notes=''):
     else:
         return refund_escrow(escrow.interaction_type, escrow.interaction_id,
                             reason=notes or 'Dispute resolved in customer favor')
+
+                            
+
+def start_release_countdown(interaction_type, interaction_id, days=3):
+    """
+    Start the auto-release countdown from the SERVICE EVENT
+    (package delivered, job marked complete), NOT the payment date.
+
+    This is the FALLBACK for unresponsive customers:
+      - Customer verifies (OTP/check-in) → release_escrow() fires immediately
+      - Customer silent, no dispute      → auto-release after `days`
+      - Customer opens dispute           → status='disputed', countdown ignored
+
+    Usage:
+        # Driver marks shipment delivered (GPS verified):
+        start_release_countdown('shipment', shipment.id, days=3)
+
+        # Provider marks job complete:
+        start_release_countdown('service', sr.id, days=2)
+    """
+    from .models import EscrowTransaction
+
+    escrow = EscrowTransaction.objects.filter(
+        interaction_type=interaction_type,
+        interaction_id=interaction_id,
+        status='held',
+    ).first()
+
+    if escrow:
+        escrow.auto_release_at = timezone.now() + timezone.timedelta(days=days)
+        escrow.save(update_fields=['auto_release_at'])
+
+    return escrow

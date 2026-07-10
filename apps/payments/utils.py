@@ -118,7 +118,6 @@ def mark_as_paid(payment_for, object_id):
                 business=shipment.business,
                 amount=shipment.price,
                 interaction_ref=shipment.tracking_number,
-                auto_release_days=3,
             )
 
         elif payment_for == 'service':
@@ -134,7 +133,6 @@ def mark_as_paid(payment_for, object_id):
                 business=sr.business,
                 amount=sr.final_total,
                 interaction_ref=sr.reference,
-                auto_release_days=3,
             )
 
         elif payment_for == 'appointment':
@@ -150,7 +148,6 @@ def mark_as_paid(payment_for, object_id):
                 business=appt.business,
                 amount=appt.total_amount,
                 interaction_ref=appt.reference,
-                auto_release_days=1,
             )
 
         elif payment_for == 'transport':

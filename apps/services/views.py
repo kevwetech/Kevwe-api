@@ -1033,7 +1033,6 @@ class RespondToQuoteView(APIView):
                     business=sr.provider.business if sr.provider and sr.provider.business_id else None,
                     amount=quote.total,
                     interaction_ref=sr.reference,
-                    auto_release_days=3,
                 )
 
                 sr.status = 'paid'
@@ -1216,6 +1215,8 @@ class CompleteJobView(APIView):
                 'otp': otp,
             }
         )
+        from apps.payments.escrow import start_release_countdown
+        start_release_countdown('service', sr.id, days=2)
 
         return api_response(
             'success',
