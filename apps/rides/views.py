@@ -182,7 +182,7 @@ class RequestRideView(APIView):
                 estimated_fare=fare_data['estimated_fare'],
                 distance_km=fare_data['distance_km'],
                 duration_minutes=fare_data['duration_minutes'],
-                payment_method=data.get('payment_method', 'cash'),
+                payment_method=data.get('payment_method', 'wallet'),
                 status='accepted' if driver else 'searching',
             )
             # Get business (company page booking)
@@ -499,7 +499,7 @@ class DriverRideView(APIView):
         elif new_status == 'completed':
             ride.completed_at = timezone.now()
             ride.actual_fare = ride.estimated_fare
-            ride.payment_status = 'paid' if ride.payment_method != 'cash' else 'unpaid'
+            ride.payment_status = 'paid' if ride.payment_method != 'wallet' else 'unpaid'
 
             # Update driver stats
             driver.total_rides += 1
@@ -508,16 +508,15 @@ class DriverRideView(APIView):
         elif new_status == 'completed':
             ride.completed_at = timezone.now()
             ride.actual_fare = ride.estimated_fare
-            ride.payment_status = 'paid' if ride.payment_method != 'cash' else 'unpaid'
+            ride.payment_status = 'paid' if ride.payment_method != 'wallet' else 'unpaid'
 
             # ── Release escrow (non-cash rides) ──
-            if ride.payment_method != 'cash':
-                from apps.payments.escrow import release_escrow, EscrowTriggers
-                release_escrow(
-                    'ride', ride.id,
-                    trigger=EscrowTriggers.RIDE_COMPLETED,
-                    notes=f'Trip completed by driver {driver.user.email}',
-                )
+            from apps.payments.escrow import release_escrow, EscrowTriggers
+            release_escrow(
+                'ride', ride.id,
+                trigger=EscrowTriggers.RIDE_COMPLETED,
+                notes=f'Trip completed by driver {driver.user.email}',
+            )
 
         if driver_lat and driver_lng:
             ride.driver_current_lat = driver_lat

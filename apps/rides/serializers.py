@@ -141,8 +141,8 @@ class RequestRideSerializer(serializers.Serializer):
     business_id = serializers.IntegerField(required=False, allow_null=True)
     vehicle_type_id = serializers.IntegerField(required=False)
     payment_method = serializers.ChoiceField(
-        choices=['cash', 'card', 'wallet', 'transfer'],
-        default='cash'
+        choices=['card', 'wallet', 'transfer'],
+        default='wallet'
     )
 
 

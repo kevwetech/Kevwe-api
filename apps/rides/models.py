@@ -36,7 +36,6 @@ class Ride(TimeStampedModel):
         ('no_driver',      'No Driver Found'),
     )
     PAYMENT_METHOD_CHOICES = (
-        ('cash',     'Cash'),
         ('card',     'Card'),
         ('wallet',   'Wallet'),
         ('transfer', 'Transfer'),
@@ -74,7 +73,7 @@ class Ride(TimeStampedModel):
     distance_km      = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     duration_minutes = models.IntegerField(null=True, blank=True)
 
-    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='cash')
+    payment_method = models.CharField(max_length=20, choices=PAYMENT_METHOD_CHOICES, default='wallet')
     payment_status = models.CharField(max_length=20, choices=PAYMENT_STATUS_CHOICES, default='unpaid')
     status         = models.CharField(max_length=20, choices=STATUS_CHOICES, default='requested')
 
