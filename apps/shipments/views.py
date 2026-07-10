@@ -31,13 +31,23 @@ from .utils import (
 )
 
 
+# ══════════════════════════════════════════════════════════
+# ShipmentListCreateView — corrected POST
+# Fixes:
+#   1. business_id resolved + saved on shipment (company page bookings)
+#   2. Wallet payment now holds escrow (was debiting without hold)
+#   3. Tracking order: pending FIRST, then assigned
+#   4. Auto-assign company-scoped via shipment.business
+# Requires in CreateShipmentSerializer:
+#   business_id = serializers.IntegerField(required=False, allow_null=True)
+# ══════════════════════════════════════════════════════════
+
 class ShipmentListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         shipments = Shipment.objects.filter(sender=request.user)
 
-        # Filter by status
         shipment_status = request.query_params.get('status')
         if shipment_status:
             shipments = shipments.filter(status=shipment_status)
@@ -56,6 +66,16 @@ class ShipmentListCreateView(APIView):
         serializer = CreateShipmentSerializer(data=request.data)
         if serializer.is_valid():
             data = serializer.validated_data
+
+            # ── Resolve business (company page booking) ──
+            business = None
+            if data.get('business_id'):
+                from apps.marketplace.models import Business
+                business = Business.objects.filter(
+                    pk=data['business_id'],
+                    status='active', is_active=True,
+                ).first()
+
             # ── Resolve pickup details ──────────────
             pickup_address_ref = None
             pickup_name = data.get('pickup_name', '')
@@ -70,7 +90,6 @@ class ShipmentListCreateView(APIView):
             pickup_zone_obj = None
 
             if data.get('pickup_address_id'):
-                # Use saved address
                 addr = Address.objects.filter(
                     pk=data['pickup_address_id'],
                     user=request.user
@@ -88,7 +107,6 @@ class ShipmentListCreateView(APIView):
                     pickup_lat = addr.latitude
                     pickup_lng = addr.longitude
             else:
-                # Manual entry - resolve FKs
                 if data.get('pickup_city_id'):
                     pickup_city_ref = City.objects.filter(
                         pk=data['pickup_city_id']
@@ -121,7 +139,6 @@ class ShipmentListCreateView(APIView):
             delivery_zone_obj = None
 
             if data.get('delivery_address_id'):
-                # Use saved address
                 addr = Address.objects.filter(
                     pk=data['delivery_address_id']
                 ).first()
@@ -138,7 +155,6 @@ class ShipmentListCreateView(APIView):
                     delivery_lat = addr.latitude
                     delivery_lng = addr.longitude
             else:
-                # Manual entry - resolve FKs
                 if data.get('delivery_city_id'):
                     delivery_city_ref = City.objects.filter(
                         pk=data['delivery_city_id']
@@ -207,18 +223,12 @@ class ShipmentListCreateView(APIView):
                             'shortage': str(shortage),
                             'price_breakdown': price_data['breakdown'],
                             'alternatives': [
-                                {
-                                    'method': 'paystack',
-                                    'message': 'Pay with Paystack'
-                                },
-                                {
-                                    'method': 'flutterwave',
-                                    'message': 'Pay with Flutterwave'
-                                },
-                                {
-                                    'method': 'topup',
-                                    'message': f'Top up ₦{shortage} and try again'
-                                }
+                                {'method': 'paystack',
+                                 'message': 'Pay with Paystack'},
+                                {'method': 'flutterwave',
+                                 'message': 'Pay with Flutterwave'},
+                                {'method': 'topup',
+                                 'message': f'Top up ₦{shortage} and try again'},
                             ]
                         },
                         http_status=status.HTTP_402_PAYMENT_REQUIRED
@@ -227,6 +237,7 @@ class ShipmentListCreateView(APIView):
             # ── Create shipment ──────────────────────
             shipment = Shipment.objects.create(
                 sender=request.user,
+                business=business,
                 reference=generate_reference('SHP'),
                 tracking_number=generate_tracking_number(),
                 package_name=data['package_name'],
@@ -268,7 +279,25 @@ class ShipmentListCreateView(APIView):
                 service_type=data.get('service_type', 'standard'),
             )
 
-            # Create initial tracking
+            # ── Hold wallet payment in escrow ────────
+            # (Gateway payments hold via mark_as_paid after webhook;
+            #  wallet pays instantly, so hold here.)
+            if payment_status == 'paid':
+                try:
+                    from apps.payments.escrow import hold_funds
+                    hold_funds(
+                        interaction_type='shipment',
+                        interaction_id=shipment.id,
+                        customer=request.user,
+                        business=business,
+                        amount=price,
+                        interaction_ref=shipment.tracking_number,
+                        auto_release_days=3,
+                    )
+                except Exception as e:
+                    print(f"Escrow hold error: {e}")
+
+            # ── Initial tracking (FIRST) ─────────────
             ShipmentTracking.objects.create(
                 shipment=shipment,
                 status='pending',
@@ -276,10 +305,49 @@ class ShipmentListCreateView(APIView):
                 updated_by=request.user
             )
 
-            # Send confirmation email
+            # ── Auto-assign nearest driver (company-scoped) ──
+            from apps.drivers.utils import find_nearby_drivers
+            nearby = find_nearby_drivers(
+                shipment.pickup_lat,
+                shipment.pickup_lng,
+                radius_km=15,
+                business=shipment.business,  # None = any platform driver
+            )
+            if nearby:
+                driver = nearby[0]['driver']
+                shipment.driver = driver
+                shipment.status = 'assigned'
+                shipment.save()
+
+                ShipmentTracking.objects.create(
+                    shipment=shipment,
+                    status='assigned',
+                    description=f'Driver {driver.user.full_name} auto-assigned '
+                                f'({nearby[0]["distance_km"]}km away)',
+                    updated_by=request.user,
+                )
+
+                # Notify driver
+                try:
+                    from apps.notifications.utils import send_notification
+                    send_notification(
+                        user=driver.user,
+                        title='New Shipment Assigned 📦',
+                        message=(
+                            f'Pickup: {shipment.pickup_address}. '
+                            f'Deliver to: {shipment.delivery_address}.'
+                        ),
+                        notification_type='system',
+                        data={'shipment_id': shipment.id,
+                              'tracking_number': shipment.tracking_number},
+                    )
+                except Exception:
+                    pass
+
+            # ── Confirmation email ───────────────────
             send_shipment_confirmation_email(shipment)
 
-            # ── Send tracking notification ──
+            # ── Tracking notification to sender ──────
             try:
                 from apps.notifications.utils import send_notification
                 tracking_url = f'/HOME/HTML/track.html?type=shipment&tracking={shipment.tracking_number}'
@@ -637,6 +705,17 @@ class AssignDriverView(APIView):
                 'Driver not found or not available',
                 http_status=status.HTTP_404_NOT_FOUND
             )
+
+        # ── Company scoping: shipment booked from a company page
+        #    must be handled by that company's drivers ──
+        if shipment.business_id:
+            if driver.business_id != shipment.business_id:
+                return api_response(
+                    'error',
+                    f'This shipment belongs to {shipment.business.name}. '
+                    f'Only their drivers can be assigned.',
+                    http_status=status.HTTP_400_BAD_REQUEST
+                )
 
         shipment.driver = driver
         shipment.status = 'assigned'

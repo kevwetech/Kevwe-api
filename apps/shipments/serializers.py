@@ -117,6 +117,7 @@ class CreateShipmentSerializer(serializers.Serializer):
     )
     weight = serializers.DecimalField(max_digits=10, decimal_places=2)
     fragile = serializers.BooleanField(default=False)
+    business_id = serializers.IntegerField(required=False, allow_null=True)
 
     # Pickup manual
     pickup_name = serializers.CharField(required=False, allow_blank=True)
