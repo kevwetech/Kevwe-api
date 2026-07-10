@@ -77,12 +77,27 @@ class Ride(TimeStampedModel):
     accepted_at  = models.DateTimeField(null=True, blank=True)
     started_at   = models.DateTimeField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    # Verification
+    start_code = models.CharField(
+        max_length=6, blank=True, null=True,
+        help_text='Customer gives this code to driver before trip starts'
+    )
+    start_code_verified = models.BooleanField(default=False)
+    start_code_verified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
 
     def __str__(self):
         return f"Ride {self.reference}"
+    
+    def save(self, *args, **kwargs):
+        import uuid
+        if not self.reference:
+            self.reference = f'RIDE-{uuid.uuid4().hex[:6].upper()}'
+        if not self.start_code:
+            self.start_code = uuid.uuid4().hex[:4].upper()
+        super().save(*args, **kwargs)
 
 
 class RideTracking(TimeStampedModel):

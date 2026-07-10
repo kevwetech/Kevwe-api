@@ -1009,3 +1009,69 @@ class TransportCancellationPolicyView(APIView):
         return api_response('error', 'Validation failed',
             errors=serializer.errors,
             http_status=status.HTTP_400_BAD_REQUEST)
+
+class VerifyRideStartView(APIView):
+    """
+    POST /api/v1/rides/<pk>/verify-start/
+    Driver enters the customer's start code before beginning trip.
+    Body: { "start_code": "A3F7" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.utils import timezone
+
+        try:
+            ride = Ride.objects.get(pk=pk)
+        except Ride.DoesNotExist:
+            return api_response('error', 'Ride not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        # Only the assigned driver can verify
+        if not ride.driver or ride.driver.user != request.user:
+            return api_response('error', 'Only the assigned driver can verify this ride',
+                http_status=status.HTTP_403_FORBIDDEN)
+
+        if ride.start_code_verified:
+            return api_response('error', 'Ride already verified',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        code = str(request.data.get('start_code', '')).strip().upper()
+        if code != ride.start_code:
+            return api_response('error', 'Invalid start code',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        ride.start_code_verified = True
+        ride.start_code_verified_at = timezone.now()
+        ride.status = 'in_progress'
+        ride.started_at = timezone.now()
+        ride.save()
+
+        RideTracking.objects.create(
+            ride=ride,
+            driver_lat=ride.driver_current_lat or 0,
+            driver_lng=ride.driver_current_lng or 0,
+            status='in_progress',
+            description='Start code verified — trip started',
+        )
+
+        # Notify customer via WebSocket
+        from channels.layers import get_channel_layer
+        from asgiref.sync import async_to_sync
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'ride_{ride.id}',
+            {
+                'type': 'ride_update',
+                'status': 'in_progress',
+                'driver_lat': str(ride.driver_current_lat) if ride.driver_current_lat else None,
+                'driver_lng': str(ride.driver_current_lng) if ride.driver_current_lng else None,
+                'message': 'Trip started — code verified',
+            }
+        )
+
+        return api_response('success', 'Trip started', data={
+            'ride_id': ride.id,
+            'reference': ride.reference,
+            'status': ride.status,
+        })
