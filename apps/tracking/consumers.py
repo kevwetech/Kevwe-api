@@ -87,12 +87,16 @@ class RideTrackingConsumer(AsyncWebsocketConsumer):
                 'driver_lat': str(ride.driver_current_lat) if ride.driver_current_lat else None,
                 'driver_lng': str(ride.driver_current_lng) if ride.driver_current_lng else None,
                 'pickup_address': ride.pickup_address,
+                'pickup_lat': str(ride.pickup_lat) if ride.pickup_lat else None,
+                'pickup_lng': str(ride.pickup_lng) if ride.pickup_lng else None,
                 'destination_address': ride.destination_address,
+                'destination_lat': str(ride.destination_lat) if ride.destination_lat else None,
+                'destination_lng': str(ride.destination_lng) if ride.destination_lng else None,
                 'estimated_fare': str(ride.estimated_fare) if ride.estimated_fare else None,
             }
         except Exception:
             return None
-
+    
 
 class DriverRideConsumer(AsyncWebsocketConsumer):
     """
