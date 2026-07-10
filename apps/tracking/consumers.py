@@ -742,6 +742,13 @@ class AppointmentTrackingConsumer(AsyncWebsocketConsumer):
             appt.status = 'checked_in'
             appt.checked_in_at = tz.now()
             appt.save()
+            # Release escrow
+            from apps.payments.escrow import release_escrow, EscrowTriggers
+            release_escrow(
+                'appointment', appt.id,
+                trigger=EscrowTriggers.APPOINTMENT_CHECKIN,
+                notes='Checked in via WebSocket',
+            )
             AppointmentTracking.objects.create(
                 appointment=appt,
                 status='checked_in',
@@ -750,6 +757,8 @@ class AppointmentTrackingConsumer(AsyncWebsocketConsumer):
             return {'success': True, 'message': 'Checked in successfully'}
         except Exception as e:
             return {'success': False, 'message': str(e)}
+
+
 
 class ServiceTrackingConsumer(AsyncWebsocketConsumer):
     """

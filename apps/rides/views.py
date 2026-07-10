@@ -460,6 +460,20 @@ class DriverRideView(APIView):
             driver.total_rides += 1
             driver.save()
 
+        elif new_status == 'completed':
+            ride.completed_at = timezone.now()
+            ride.actual_fare = ride.estimated_fare
+            ride.payment_status = 'paid' if ride.payment_method != 'cash' else 'unpaid'
+
+            # ── Release escrow (non-cash rides) ──
+            if ride.payment_method != 'cash':
+                from apps.payments.escrow import release_escrow, EscrowTriggers
+                release_escrow(
+                    'ride', ride.id,
+                    trigger=EscrowTriggers.RIDE_COMPLETED,
+                    notes=f'Trip completed by driver {driver.user.email}',
+                )
+
         if driver_lat and driver_lng:
             ride.driver_current_lat = driver_lat
             ride.driver_current_lng = driver_lng
@@ -878,11 +892,19 @@ class TransportBoardingView(APIView):
             passenger.boarded_at = timezone.now()
         passenger.save()
 
+
         # Log
         TransportBoardingLog.objects.create(
             passenger=passenger,
             scanned_by=request.user,
             action=action,
+        )
+        # ── Release escrow on boarding ──
+        from apps.payments.escrow import release_escrow, EscrowTriggers
+        release_escrow(
+            'transport', passenger.booking.id,
+            trigger=EscrowTriggers.PASSENGER_BOARDED,
+            notes=f'Passenger {passenger.full_name} boarded — ticket {passenger.ticket_code}',
         )
 
         return api_response('success',

@@ -997,16 +997,47 @@ class RespondToQuoteView(APIView):
             quote.status = 'approved'
             quote.responded_at = now
             quote.save()
-
             commission, earnings = calculate_commission_split(
                 quote.total, sr.service.commission_rate
             )
-
             sr.status = 'quote_approved'
             sr.final_total = quote.total
             sr.platform_commission = commission
             sr.provider_earnings = earnings
             sr.save()
+
+            # ── Pay from wallet + hold in escrow ──
+            payment_method = request.data.get('payment_method', 'wallet')
+            if payment_method == 'wallet':
+                from apps.wallet.utils import get_or_create_wallet
+                from apps.payments.escrow import hold_funds
+
+                wallet = get_or_create_wallet(request.user)
+                if wallet.balance < quote.total:
+                    return api_response(
+                        'error',
+                        f'Insufficient wallet balance. '
+                        f'Need ₦{quote.total}, have ₦{wallet.balance}',
+                        http_status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                wallet.debit(
+                    amount=quote.total,
+                    description=f'Payment for {sr.service.name} — {sr.reference}',
+                )
+
+                hold_funds(
+                    interaction_type='service',
+                    interaction_id=sr.id,
+                    customer=request.user,
+                    business=sr.provider.business if sr.provider and sr.provider.business_id else None,
+                    amount=quote.total,
+                    interaction_ref=sr.reference,
+                    auto_release_days=3,
+                )
+
+                sr.status = 'paid'
+                sr.save()
 
             notif_title = 'Quote Approved ✅'
             notif_msg = (
@@ -1232,10 +1263,20 @@ class ConfirmCompletionView(APIView):
         evidence.completion_otp = None
         evidence.save()
 
+        # ── Release escrow to provider's business ──
+        from apps.payments.escrow import release_escrow, EscrowTriggers
+        release_escrow(
+            'service', sr.id,
+            trigger=EscrowTriggers.SERVICE_COMPLETED,
+            notes=f'Completion OTP verified by customer {request.user.email}',
+        )
+
         return api_response(
             'success', 'Job confirmed successfully!',
             data=ServiceRequestSerializer(sr).data
         )
+
+        
 
 
 class CancelServiceRequestView(APIView):

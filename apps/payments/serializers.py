@@ -32,7 +32,10 @@ class PaymentSerializer(serializers.ModelSerializer):
 
 class InitializePaymentSerializer(serializers.Serializer):
     payment_for = serializers.ChoiceField(
-        choices=['order', 'booking', 'ride', 'shipment', 'wallet']
+        choices=[
+            'order', 'booking', 'ride', 'shipment', 'wallet',
+            'service', 'appointment', 'transport',
+        ]
     )
     object_id = serializers.IntegerField()
     gateway = serializers.ChoiceField(

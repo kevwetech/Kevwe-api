@@ -497,6 +497,14 @@ class AppointmentCheckInView(APIView):
         appointment.checked_in_at = timezone.now()
         appointment.save()
 
+        # ── Release escrow on check-in ──
+        from apps.payments.escrow import release_escrow, EscrowTriggers
+        release_escrow(
+            'appointment', appointment.id,
+            trigger=EscrowTriggers.APPOINTMENT_CHECKIN,
+            notes=f'Customer checked in with code',
+        )
+
         AppointmentTracking.objects.create(
             appointment=appointment,
             status='checked_in',

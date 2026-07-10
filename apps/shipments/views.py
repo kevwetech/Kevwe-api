@@ -633,3 +633,94 @@ class AssignDriverView(APIView):
             'Driver assigned successfully',
             data=ShipmentSerializer(shipment).data
         )
+
+class VerifyShipmentDeliveryView(APIView):
+    """
+    POST /api/v1/shipments/<pk>/verify-delivery/
+    Driver enters the recipient's delivery OTP to confirm delivery.
+    Body: { "otp": "123456" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.utils import timezone
+
+        try:
+            shipment = Shipment.objects.get(pk=pk)
+        except Shipment.DoesNotExist:
+            return api_response('error', 'Shipment not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        # Only assigned driver can verify
+        if not shipment.driver or shipment.driver.user != request.user:
+            return api_response('error',
+                'Only the assigned driver can verify delivery',
+                http_status=status.HTTP_403_FORBIDDEN)
+
+        if shipment.status == 'delivered':
+            return api_response('error', 'Already delivered',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        otp = str(request.data.get('otp', '')).strip()
+        if not otp or otp != shipment.delivery_otp:
+            return api_response('error', 'Invalid delivery OTP',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        shipment.status = 'delivered'
+        shipment.delivered_at = timezone.now()
+        shipment.save()
+
+        # ── Release escrow ──
+        from apps.payments.escrow import release_escrow, EscrowTriggers
+        release_escrow(
+            'shipment', shipment.id,
+            trigger=EscrowTriggers.SHIPMENT_DELIVERED,
+            notes=f'Delivery OTP verified by driver {request.user.email}',
+        )
+
+        # Notify sender
+        try:
+            from apps.notifications.utils import send_notification
+            send_notification(
+                user=shipment.sender,
+                title='Package Delivered 📦',
+                message=f'Your shipment {shipment.tracking_number} has been delivered.',
+                notification_type='system',
+                data={'shipment_id': shipment.id},
+            )
+        except Exception:
+            pass
+
+        return api_response('success', 'Delivery verified', data={
+            'tracking_number': shipment.tracking_number,
+            'status': shipment.status,
+        })
+
+
+class GenerateDeliveryOTPView(APIView):
+    """
+    POST /api/v1/shipments/<pk>/generate-otp/
+    Recipient/sender generates OTP when driver arrives.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        import random
+
+        try:
+            shipment = Shipment.objects.get(pk=pk, sender=request.user)
+        except Shipment.DoesNotExist:
+            return api_response('error', 'Shipment not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        if shipment.status not in ['in_transit', 'out_for_delivery']:
+            return api_response('error',
+                f'Cannot generate OTP — status is {shipment.status}',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        otp = str(random.randint(100000, 999999))
+        shipment.delivery_otp = otp
+        shipment.save()
+
+        return api_response('success', 'Delivery OTP generated',
+            data={'otp': otp})
