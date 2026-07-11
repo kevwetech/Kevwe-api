@@ -1410,6 +1410,77 @@ class BusinessReviewsSectionView(APIView):
             }
         )
 
+class BusinessEscrowSummaryView(APIView):
+    """
+    GET - Escrow section for business dashboard
+    GET /api/v1/dashboard/business/<business_id>/escrow-summary/
+    Shows held/released/refunded funds across ALL interaction types.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, business_id):
+        from apps.marketplace.models import Business
+        from apps.payments.models import EscrowTransaction
+        from django.db.models import Sum, Count
+
+        try:
+            business = Business.objects.get(pk=business_id, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found', http_status=403)
+
+        escrows = EscrowTransaction.objects.filter(business=business)
+
+        # Totals by status
+        held = escrows.filter(status='held')
+        summary = {
+            'held': {
+                'count': held.count(),
+                'vendor_amount': float(held.aggregate(t=Sum('vendor_amount'))['t'] or 0),
+            },
+            'released': {
+                'count': escrows.filter(status='released').count(),
+                'vendor_amount': float(escrows.filter(status='released')
+                    .aggregate(t=Sum('vendor_amount'))['t'] or 0),
+            },
+            'disputed': {
+                'count': escrows.filter(status='disputed').count(),
+                'vendor_amount': float(escrows.filter(status='disputed')
+                    .aggregate(t=Sum('vendor_amount'))['t'] or 0),
+            },
+            'refunded': {
+                'count': escrows.filter(status='refunded').count(),
+            },
+        }
+
+        # Held breakdown by interaction type
+        by_type = list(
+            held.values('interaction_type')
+                .annotate(count=Count('id'), amount=Sum('vendor_amount'))
+                .order_by('-amount')
+        )
+
+        # Upcoming auto-releases (money arriving soon)
+        upcoming = list(
+            held.filter(auto_release_at__isnull=False)
+                .order_by('auto_release_at')
+                .values('reference', 'interaction_type', 'interaction_ref',
+                        'vendor_amount', 'auto_release_at')[:10]
+        )
+
+        # Recent activity
+        recent = list(
+            escrows.order_by('-updated_at')
+                .values('reference', 'interaction_type', 'interaction_ref',
+                        'status', 'vendor_amount', 'release_trigger',
+                        'updated_at')[:15]
+        )
+
+        return api_response('success', 'Escrow summary retrieved', data={
+            'summary': summary,
+            'held_by_type': by_type,
+            'upcoming_releases': upcoming,
+            'recent_activity': recent,
+        })
 
 # ── User dashboard (existing, kept) ──────────────────────
 from .user_views import UserDashboardView

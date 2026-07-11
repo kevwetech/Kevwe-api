@@ -12,6 +12,7 @@ from .views import (
     BusinessStaffSectionView,
     BusinessWalletSectionView,
     BusinessReviewsSectionView,
+    BusinessEscrowSummaryView,
 )
 from .user_views import UserDashboardView
 
@@ -78,6 +79,12 @@ urlpatterns = [
         'business/<int:business_id>/reviews-summary/',
         BusinessReviewsSectionView.as_view(),
         name='business_reviews_section'
+    ),
+
+    path(
+       'business/<int:business_id>/escrow-summary/',
+       BusinessEscrowSummaryView.as_view(),
+       name='business_escrow_summary'
     ),
 
     # ── User ──────────────────────────────────────────────
