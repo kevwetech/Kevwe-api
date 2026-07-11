@@ -178,7 +178,7 @@ class BusinessListView(APIView):
             status='active', is_active=True
         )
         industry_id = request.query_params.get('industry')
-        category_id = request.query_params.get('category')
+        category_param = request.query_params.get('category')
         city_id = request.query_params.get('city')
         state_id = request.query_params.get('state')
         search = request.query_params.get('search')
@@ -188,10 +188,11 @@ class BusinessListView(APIView):
             businesses = businesses.filter(
                 industry__id=industry_id
             )
-        if category_id:
-            businesses = businesses.filter(
-                category__id=category_id
-            )
+        if category_param:
+            if str(category_param).isdigit():
+                businesses = businesses.filter(category__id=category_param)
+            else:
+                businesses = businesses.filter(category__slug=category_param)
         if city_id:
             businesses = businesses.filter(city__id=city_id)
         if state_id:
