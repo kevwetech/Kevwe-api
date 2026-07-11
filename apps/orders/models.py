@@ -151,7 +151,6 @@ class Order(TimeStampedModel):
         ('wallet', 'Wallet'),
         ('paystack', 'Paystack'),
         ('flutterwave', 'Flutterwave'),
-        ('cash', 'Cash on Delivery'),
         ('transfer', 'Bank Transfer'),
     )
 
@@ -294,6 +293,8 @@ class Order(TimeStampedModel):
         decimal_places=2,
         default=0
     )
+    delivery_otp = models.CharField(max_length=6, blank=True, null=True)
+    delivery_verified_at = models.DateTimeField(null=True, blank=True)
 
     # Commission splits (auto calculated)
     platform_commission = models.DecimalField(
@@ -412,6 +413,13 @@ class Order(TimeStampedModel):
             )
 
         self.save()
+    
+    def save(self, *args, **kwargs):
+        import uuid
+        if not self.delivery_otp:
+            import random
+            self.delivery_otp = str(random.randint(100000, 999999))
+        super().save(*args, **kwargs)
 
 
 class OrderItem(TimeStampedModel):

@@ -54,7 +54,17 @@ def mark_as_paid(payment_for, object_id):
             order.status = 'confirmed'
             order.save()
 
-            # Send notification
+            # Hold in escrow until delivery OTP verified
+            from apps.payments.escrow import hold_funds
+            hold_funds(
+                interaction_type='order',
+                interaction_id=order.id,
+                customer=order.user,
+                business=order.business,
+                amount=order.total,
+                interaction_ref=order.order_number,
+            )
+
             from apps.notifications.utils import send_order_notification
             send_order_notification(
                 user=order.user,
@@ -67,9 +77,25 @@ def mark_as_paid(payment_for, object_id):
             booking = Booking.objects.get(pk=object_id)
             booking.payment_status = 'paid'
             booking.status = 'confirmed'
+
+            # Generate check-in code if missing
+            if not getattr(booking, 'checkin_code', None):
+                import random
+                booking.checkin_code = ''.join(random.choices('0123456789', k=6))
+
             booking.save()
 
-            # Send notification
+            # Hold in escrow until check-in verified
+            from apps.payments.escrow import hold_funds
+            hold_funds(
+                interaction_type='booking',
+                interaction_id=booking.id,
+                customer=booking.user,
+                business=booking.business,
+                amount=booking.total,
+                interaction_ref=booking.booking_number,
+            )
+
             from apps.notifications.utils import send_booking_notification
             send_booking_notification(
                 user=booking.user,
@@ -82,25 +108,12 @@ def mark_as_paid(payment_for, object_id):
             ride = Ride.objects.get(pk=object_id)
             ride.payment_status = 'paid'
             ride.save()
-
-        elif payment_for == 'shipment':
-            from apps.shipments.models import Shipment
-            shipment = Shipment.objects.get(pk=object_id)
-            shipment.payment_status = 'paid'
-            shipment.save()
-
-        elif payment_for == 'ride':
-            from apps.rides.models import Ride
-            ride = Ride.objects.get(pk=object_id)
-            ride.payment_status = 'paid'
-            ride.save()
-            # Hold in escrow until trip completes
             from apps.payments.escrow import hold_funds
             hold_funds(
                 interaction_type='ride',
                 interaction_id=ride.id,
                 customer=ride.rider,
-                business=None,  # platform rides — or driver's business if fleet
+                business=ride.business,
                 amount=ride.estimated_fare,
                 interaction_ref=ride.reference,
             )
@@ -120,6 +133,7 @@ def mark_as_paid(payment_for, object_id):
                 interaction_ref=shipment.tracking_number,
             )
 
+            
         elif payment_for == 'service':
             from apps.services.models import ServiceRequest
             sr = ServiceRequest.objects.get(pk=object_id)

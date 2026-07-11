@@ -10,6 +10,7 @@ from .views import (
     VendorOrderListView,
     VendorUpdateOrderView,
     AdminOrderListView,
+    VerifyOrderDeliveryView,
 )
 
 urlpatterns = [
@@ -23,6 +24,7 @@ urlpatterns = [
     path('<int:pk>/', OrderDetailView.as_view(), name='order_detail'),
     path('<int:pk>/cancel/', CancelOrderView.as_view(), name='cancel_order'),
     path('<int:pk>/rate/', RateOrderView.as_view(), name='rate_order'),
+    path('<int:pk>/verify-delivery/', VerifyOrderDeliveryView.as_view(), name='verify_order_delivery'),
 
     # Vendor orders
     path('business/<int:business_id>/', VendorOrderListView.as_view(), name='vendor_orders'),

@@ -254,7 +254,7 @@ def resolve_dispute(reference, resolution, actor=None, ip=None, notes=''):
         return refund_escrow(escrow.interaction_type, escrow.interaction_id,
                             reason=notes or 'Dispute resolved in customer favor')
 
-                            
+
 
 def start_release_countdown(interaction_type, interaction_id, days=3):
     """
@@ -285,4 +285,67 @@ def start_release_countdown(interaction_type, interaction_id, days=3):
         escrow.auto_release_at = timezone.now() + timezone.timedelta(days=days)
         escrow.save(update_fields=['auto_release_at'])
 
+    return escrow
+
+def refund_escrow_partial(interaction_type, interaction_id, refund_amount, reason=''):
+    """
+    Partial refund: customer gets refund_amount back,
+    the remainder (cancellation fee) releases to the vendor.
+    """
+    from decimal import Decimal
+    from .models import EscrowTransaction
+    from apps.wallet.models import VendorWallet, Wallet, WalletTransaction
+
+    refund_amount = Decimal(str(refund_amount))
+
+    with transaction.atomic():
+        escrow = EscrowTransaction.objects.select_for_update().filter(
+            interaction_type=interaction_type,
+            interaction_id=interaction_id,
+            status='held',
+        ).first()
+        if not escrow:
+            return None
+
+        if refund_amount >= escrow.amount:
+            # Full refund
+            return refund_escrow(interaction_type, interaction_id, reason=reason)
+
+        kept = escrow.amount - refund_amount          # cancellation fee (gross)
+        rate = (escrow.commission_amount / escrow.amount) if escrow.amount else Decimal('0')
+        kept_commission = (kept * rate).quantize(Decimal('0.01'))
+        kept_vendor = kept - kept_commission
+
+        old = escrow.status
+        escrow.status = 'refunded'
+        escrow.refunded_at = timezone.now()
+        escrow.notes = f'{reason} | Partial: refunded {refund_amount}, vendor kept {kept_vendor}'
+        escrow.save()
+        _log_transition(escrow, old, 'refunded', notes=escrow.notes)
+
+        # Vendor: remove full pending, add kept portion to available
+        if escrow.business:
+            wallet = VendorWallet.objects.select_for_update().get(business=escrow.business)
+            wallet.pending_balance   -= escrow.vendor_amount
+            wallet.available_balance += kept_vendor
+            wallet.total_earned      += kept_vendor
+            wallet.total_refunded    += (escrow.vendor_amount - kept_vendor)
+            wallet.save(update_fields=[
+                'pending_balance', 'available_balance',
+                'total_earned', 'total_refunded'])
+
+        # Customer refund
+        cust_wallet, _ = Wallet.objects.get_or_create(user=escrow.customer)
+        cust_wallet.balance += refund_amount
+        cust_wallet.save(update_fields=['balance'])
+        WalletTransaction.objects.create(
+            wallet=cust_wallet,
+            transaction_type='credit',
+            category='refund',
+            amount=refund_amount,
+            balance_after=cust_wallet.balance,
+            reference=escrow.reference,
+            description=f'Partial refund — {escrow.interaction_type} '
+                        f'{escrow.interaction_ref}: {reason}',
+        )
     return escrow

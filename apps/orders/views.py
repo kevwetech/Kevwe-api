@@ -461,22 +461,20 @@ class OrderListCreateView(APIView):
                         order.payment_status = 'paid'
                         order.save()
 
-                        # Credit business wallet
-                        
-                        vendor_wallet = get_or_create_vendor_wallet(business)
-                        commission_rule = get_commission_rule(business)
-                        settlement_days = (
-                            commission_rule.settlement_period_days
-                            if commission_rule
-                            else vendor_wallet.settlement_period_days
-                        )
-                        vendor_wallet.credit_earning(
-                            amount=order.business_earnings,
-                            description=f'Earnings from order {order.order_number}',
-                            reference=f'BIZ-{ref}',
-                            order=order,
-                            settlement_days=settlement_days,
-                        )
+                        # ── Hold payment in escrow ──
+                        try:
+                            from apps.payments.escrow import hold_funds
+                            hold_funds(
+                                interaction_type='order',
+                                interaction_id=order.id,
+                                customer=request.user,
+                                business=business,
+                                amount=order.total,
+                                interaction_ref=order.order_number,
+                            )
+                        except Exception as e:
+                            print(f"Escrow hold error: {e}")
+
                 else:
                     shortage = order.total - wallet.balance
                     order.delete()
@@ -528,13 +526,6 @@ class OrderListCreateView(APIView):
             except Exception as e:
                 print(f"Commission creation error: {e}")
             
-            # Credit vendor + driver earnings (goes to pending)
-            try:
-                from apps.wallet.earnings import credit_order_earnings
-                credit_order_earnings(order)
-            except Exception as e:
-                print(f"Order earnings credit error: {e}")
-
             # Fraud check on order placement
             try:
                 from apps.fraud.utils import (
@@ -681,25 +672,16 @@ class CancelOrderView(APIView):
                     description=f'Refund for cancelled order {order.order_number}',
                     reference=f'REF-{order.reference}'
                 )
-                order.payment_status = 'refunded'
-                order.save()
-
-                # Deduct from business wallet
-                from apps.wallet.utils import get_or_create_wallet as get_wallet
-                business_wallet = get_wallet(order.business.owner)
-                business_wallet.debit(
-                    amount=order.business_earnings,
-                    description=f'Refund deduction for cancelled order {order.order_number}',
-                    reference=f'BREF-{order.reference}'
-                )
-
-        # Create tracking
-        OrderTracking.objects.create(
-            order=order,
-            status='cancelled',
-            description=f'Order cancelled. Reason: {reason}',
-            updated_by=request.user
-        )
+                # Refund via escrow if paid
+                if order.payment_status == 'paid':
+                    from apps.payments.escrow import refund_escrow
+                    refunded = refund_escrow(
+                        'order', order.id,
+                        reason=f'Order cancelled: {reason}',
+                    )
+                if refunded:
+                    order.payment_status = 'refunded'
+                    order.save()
 
         # Notify business
         from apps.notifications.utils import send_notification
@@ -1020,3 +1002,69 @@ class AdminOrderListView(APIView):
                 'results':   serializer.data
             }
         )
+
+class VerifyOrderDeliveryView(APIView):
+    """
+    POST /api/v1/orders/<pk>/verify-delivery/
+    Rider enters the customer's delivery OTP to confirm delivery.
+    Releases escrow to the vendor.
+    Body: { "otp": "123456" }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        from django.utils import timezone
+
+        try:
+            order = Order.objects.get(pk=pk)
+        except Order.DoesNotExist:
+            return api_response('error', 'Order not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+
+        # Rider assigned to the delivery, or the vendor for pickup orders
+        is_driver = order.driver and order.driver.user == request.user
+        is_vendor = order.business and order.business.owner == request.user
+        if not (is_driver or is_vendor):
+            return api_response('error',
+                'Only the assigned rider or vendor can verify delivery',
+                http_status=status.HTTP_403_FORBIDDEN)
+
+        if order.status == 'delivered':
+            return api_response('error', 'Order already delivered',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        otp = str(request.data.get('otp', '')).strip()
+        if not otp or otp != order.delivery_otp:
+            return api_response('error', 'Invalid delivery code',
+                http_status=status.HTTP_400_BAD_REQUEST)
+
+        order.status = 'delivered'
+        order.delivery_verified_at = timezone.now()
+        order.save()
+
+        OrderTracking.objects.create(
+            order=order,
+            status='delivered',
+            description='Delivery code verified — order delivered',
+            updated_by=request.user,
+        )
+
+        # ── Release escrow to vendor ──
+        from apps.payments.escrow import release_escrow, EscrowTriggers
+        release_escrow(
+            'order', order.id,
+            trigger=EscrowTriggers.ORDER_DELIVERED,
+            notes=f'Delivery OTP verified by {request.user.email}',
+        )
+
+        # Notify customer
+        try:
+            from apps.notifications.utils import send_order_notification
+            send_order_notification(request.user if False else order.user, order, 'order_delivered')
+        except Exception:
+            pass
+
+        return api_response('success', 'Delivery verified', data={
+            'order_number': order.order_number,
+            'status': order.status,
+        })

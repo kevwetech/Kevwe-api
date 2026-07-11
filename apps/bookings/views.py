@@ -766,26 +766,20 @@ class BookingListCreateView(APIView):
                         except Exception as e:
                             print(f"Booking notification error: {e}")
 
-                        # Credit vendor earnings (goes to pending)
+                       # ── Hold payment in escrow ──
                         try:
-                            from apps.wallet.earnings import (
-                                credit_booking_earnings
+                            from apps.payments.escrow import hold_funds
+                            hold_funds(
+                                interaction_type='booking',
+                                interaction_id=booking.id,
+                                customer=request.user,
+                                business=item.business,
+                                amount=total,
+                                interaction_ref=booking.booking_number,
                             )
-                            credit_booking_earnings(booking)
                         except Exception as e:
-                            print(f"Booking earnings credit error: {e}")
-
+                            print(f"Escrow hold error: {e}")
                         
-                        # Credit business wallet
-                        if item.business:
-                            biz_wallet = get_or_create_wallet(
-                                item.business.owner
-                            )
-                            biz_wallet.credit(
-                                amount=business_earnings,
-                                description=f'Booking earnings {booking.booking_number}',
-                                reference=f'BIZ-{ref}'
-                            )
                 else:
                     shortage = total - wallet.balance
                     booking.delete()
@@ -943,26 +937,16 @@ class CancelBookingView(APIView):
         if (booking.payment_status == 'paid' and
                 booking.payment_method == 'wallet' and
                 refund_amount > 0):
-            from apps.wallet.utils import get_or_create_wallet
-            wallet = get_or_create_wallet(request.user)
-            wallet.credit(
-                amount=refund_amount,
-                description=f'Refund for cancelled booking {booking.booking_number}',
-                reference=f'REF-{booking.reference}'
+            from apps.payments.escrow import refund_escrow_partial
+            refunded = refund_escrow_partial(
+                'booking', booking.id,
+                refund_amount=refund_amount,
+                reason=f'Booking cancelled: {reason}',
             )
-            booking.payment_status = 'refunded'
-            booking.save()
+            if refunded:
+                booking.payment_status = 'refunded'
+                booking.save()
 
-            # Deduct from business
-            if booking.business:
-                biz_wallet = get_or_create_wallet(
-                    booking.business.owner
-                )
-                biz_wallet.debit(
-                    amount=booking.business_earnings,
-                    description=f'Refund deduction for {booking.booking_number}',
-                    reference=f'BREF-{booking.reference}'
-                )
 
         # Create tracking
         BookingTracking.objects.create(
@@ -1740,8 +1724,7 @@ class BookingCheckInView(APIView):
     def post(self, request, pk):
         from django.utils import timezone
         from apps.notifications.utils import send_notification
-        from apps.wallet.earnings import settle_booking_earnings
-
+        
         try:
             booking = Booking.objects.get(pk=pk)
         except Booking.DoesNotExist:
@@ -1809,11 +1792,17 @@ class BookingCheckInView(APIView):
             updated_by=request.user,
         )
 
-        # Settle vendor earnings (pending → available)
+        # ── Release escrow on verified check-in ──
         try:
-            settle_booking_earnings(booking)
+            from apps.payments.escrow import release_escrow, EscrowTriggers
+            release_escrow(
+                'booking', booking.id,
+                trigger=EscrowTriggers.BOOKING_CHECKIN,
+                notes=f'Check-in code verified by {request.user.email}',
+            )
         except Exception as e:
-            print(f"Booking settlement error: {e}")
+            print(f"Escrow release error: {e}")
+
 
         # Notify customer
         send_notification(
