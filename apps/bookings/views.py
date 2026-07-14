@@ -18,6 +18,7 @@ from .models import (
     CouponUsage,
     BookingInvoice,
     BookingReminder,
+    BookableItemCategory
 )
 from .serializers import (
     BookableItemSerializer,
@@ -33,6 +34,8 @@ from .serializers import (
     BookingCouponSerializer,
     BookingGuestSerializer,
     BookingPaymentSerializer,
+    BookableItemCategorySerializer,
+    BookableItemCategoryWithItemsSerializer,
 )
 
 
@@ -42,6 +45,120 @@ def generate_booking_number():
     return 'BKG-' + ''.join(
         random.choices(string.digits, k=8)
     )
+
+class BookableItemCategoryListCreateView(APIView):
+    """
+    GET  /api/v1/bookings/categories/?business_id=2
+         → list all categories for a business (public)
+    GET  /api/v1/bookings/categories/?business_id=2&with_items=true
+         → list categories with their items nested (for room listing page)
+    POST /api/v1/bookings/categories/
+         → create a category (business owner only)
+    Body: { business, name, description, icon, order }
+    """
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAuthenticated()]
+        return []
+ 
+    def get(self, request):
+        business_id = request.query_params.get('business_id')
+        if not business_id:
+            return api_response('error', 'business_id required',
+                http_status=status.HTTP_400_BAD_REQUEST)
+ 
+        cats = BookableItemCategory.objects.filter(
+            business_id=business_id,
+            is_active=True,
+        ).order_by('order', 'name')
+ 
+        with_items = request.query_params.get('with_items') == 'true'
+        if with_items:
+            serializer = BookableItemCategoryWithItemsSerializer(cats, many=True)
+        else:
+            serializer = BookableItemCategorySerializer(cats, many=True)
+ 
+        return api_response('success', 'Categories retrieved', data={
+            'count': cats.count(),
+            'results': serializer.data,
+        })
+ 
+    def post(self, request):
+        business_id = request.data.get('business')
+        # Verify ownership
+        from apps.marketplace.models import Business
+        try:
+            business = Business.objects.get(pk=business_id, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found or not yours',
+                http_status=status.HTTP_403_FORBIDDEN)
+ 
+        serializer = BookableItemCategorySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(business=business)
+            return api_response('success', 'Category created',
+                data=serializer.data,
+                http_status=status.HTTP_201_CREATED)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+ 
+ 
+class BookableItemCategoryDetailView(APIView):
+    """
+    GET    /api/v1/bookings/categories/<pk>/
+    PATCH  /api/v1/bookings/categories/<pk>/  (owner only)
+    DELETE /api/v1/bookings/categories/<pk>/  (owner only)
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    def get_category(self, pk):
+        try:
+            return BookableItemCategory.objects.get(pk=pk)
+        except BookableItemCategory.DoesNotExist:
+            return None
+ 
+    def get(self, request, pk):
+        cat = self.get_category(pk)
+        if not cat:
+            return api_response('error', 'Category not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        serializer = BookableItemCategoryWithItemsSerializer(cat)
+        return api_response('success', 'Category retrieved', data=serializer.data)
+ 
+    def patch(self, request, pk):
+        cat = self.get_category(pk)
+        if not cat:
+            return api_response('error', 'Category not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        if cat.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN)
+        serializer = BookableItemCategorySerializer(
+            cat, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Category updated', data=serializer.data)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+ 
+    def delete(self, request, pk):
+        cat = self.get_category(pk)
+        if not cat:
+            return api_response('error', 'Category not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        if cat.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN)
+        if cat.items.exists():
+            return api_response('error',
+                'Cannot delete category with items. Move or delete items first.',
+                http_status=status.HTTP_400_BAD_REQUEST)
+        cat.delete()
+        return api_response('success', 'Category deleted',
+            http_status=status.HTTP_204_NO_CONTENT)
+ 
 
 
 # ─── Bookable Item Views ──────────────────────────

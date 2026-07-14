@@ -3,6 +3,108 @@ from django.conf import settings
 from apps.common.models import TimeStampedModel
 from apps.drivers.models import DriverProfile
 
+class ShipmentVehicleCategory(TimeStampedModel):
+    """
+    Global vehicle categories for logistics filtering.
+    Grouped by transport mode (land/sea/air).
+    """
+    TRANSPORT_MODE_CHOICES = (
+        ('land', 'Land'),
+        ('sea',  'Sea'),
+        ('air',  'Air'),
+    )
+    transport_mode = models.CharField(
+        max_length=10,
+        choices=TRANSPORT_MODE_CHOICES,
+        default='land',
+    )
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(unique=True)
+    description = models.TextField(blank=True, null=True)
+    icon = models.CharField(max_length=10, blank=True, null=True)
+    max_weight_kg = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['transport_mode', 'order', 'name']
+        verbose_name_plural = 'Shipment Vehicle Categories'
+
+    def __str__(self):
+        return f"{self.name} ({self.get_transport_mode_display()})"
+
+
+class ShipmentServiceCategory(TimeStampedModel):
+    """
+    Business-scoped shipment service categories.
+    Each logistics company defines their own service tiers.
+    
+    e.g. Kevwe Logistics: Same Day / Next Day / Intercity / Bulk
+    e.g. DHL: Express / Economy / International
+    """
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.CASCADE,
+        related_name='shipment_service_categories',
+    )
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    icon = models.CharField(max_length=10, blank=True, null=True)
+    estimated_days_min = models.PositiveIntegerField(default=1)
+    estimated_days_max = models.PositiveIntegerField(default=3)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'name']
+        verbose_name_plural = 'Shipment Service Categories'
+
+    def __str__(self):
+        return f"{self.name} — {self.business.name}"
+
+    def save(self, *args, **kwargs):
+        if not self.slug and self.name:
+            from django.utils.text import slugify
+            import uuid
+            self.slug = slugify(self.name) + '-' + str(uuid.uuid4())[:6]
+        super().save(*args, **kwargs)
+
+
+class ShipmentVehicleType(TimeStampedModel):
+    """
+    Business-scoped vehicle types for logistics companies.
+    e.g. Kevwe Logistics: Dispatch Bike, Mini Van, 5-Ton Truck
+    """
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.CASCADE,
+        related_name='shipment_vehicle_types',
+    )
+    category = models.ForeignKey(
+        ShipmentVehicleCategory,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='vehicle_types',
+    )
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    max_weight_kg = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True)
+    base_fare = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    per_km_rate = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    icon = models.CharField(max_length=10, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'name']
+        verbose_name_plural = 'Shipment Vehicle Types'
+
+    def __str__(self):
+        return f"{self.name} — {self.business.name}"
+
 
 class Shipment(TimeStampedModel):
     STATUS_CHOICES = (

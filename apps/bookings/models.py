@@ -3,6 +3,47 @@ from django.conf import settings
 from apps.common.models import TimeStampedModel
 
 
+
+class BookableItemCategory(TimeStampedModel):
+    """
+    Business-scoped categories for bookable items.
+    Each business defines its own — no cross-contamination.
+
+    Hotel:        Standard Room / Deluxe / Suite / Penthouse
+    Salon:        Haircut / Coloring / Treatment / Braiding
+    Spa:          Massage / Facial / Steam Bath
+    Clinic:       Consultation / Dental / Eye Care
+    Apartment:    Studio / 1-Bedroom / 2-Bedroom
+    Event Centre: Main Hall / VIP Hall / Conference Room
+    """
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.CASCADE,
+        related_name='bookable_item_categories',
+    )
+    name = models.CharField(max_length=255)
+    slug = models.SlugField(blank=True, null=True)
+    description = models.TextField(blank=True, null=True)
+    icon = models.CharField(max_length=10, blank=True, null=True)
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['order', 'name']
+        unique_together = [['business', 'slug']]
+        verbose_name = 'Bookable Item Category'
+        verbose_name_plural = 'Bookable Item Categories'
+
+    def __str__(self):
+        return f"{self.name} — {self.business.name}"
+
+    def save(self, *args, **kwargs):
+        if not self.slug and self.name:
+            from django.utils.text import slugify
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+
 class BookableItem(TimeStampedModel):
     """
     Generic bookable item
@@ -36,13 +77,12 @@ class BookableItem(TimeStampedModel):
         blank=True
     )
 
-    # Category from catalog
     category = models.ForeignKey(
-        'catalog.ProductCategory',
+        'bookings.BookableItemCategory',
         on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='bookable_items'
+        null=True, blank=True,
+        related_name='items',
+        help_text='Business-scoped category (e.g. Standard Room, Suite)',
     )
 
     name = models.CharField(max_length=255)

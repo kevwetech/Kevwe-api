@@ -20,13 +20,16 @@ from .views import (
     BookingReminderView,
     BookingCheckInView,
     BookingCheckOutView,
+    BookableItemCategoryListCreateView,
+    BookableItemCategoryDetailView,
 )
 
 urlpatterns = [
     # Bookable items
     path('items/', BookableItemListCreateView.as_view(), name='bookable_items'),
     path('items/<int:pk>/', BookableItemDetailView.as_view(), name='bookable_item_detail'),
-
+    path('categories/', BookableItemCategoryListCreateView.as_view(), name='bookable_categories'),
+    path('categories/<int:pk>/', BookableItemCategoryDetailView.as_view(), name='bookable_category_detail'),
     # Policy
     path('items/<int:item_id>/policy/', BookingPolicyView.as_view(), name='booking_policy'),
 

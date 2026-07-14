@@ -9,21 +9,40 @@ from .models import (
     TransportRating,
 )
 class RideVehicleTypeSerializer(serializers.ModelSerializer):
+    """Updated — add business + vehicle_category fields"""
+    business_name = serializers.CharField(
+        source='business.name', read_only=True)
+ 
     class Meta:
         model = RideVehicleType
         fields = (
-            'id',
-            'name',
-            'description',
-            'base_fare',
-            'per_km_rate',
-            'per_minute_rate',
-            'minimum_fare',
-            'max_passengers',
-            'icon',
-            'is_active',
+            'id', 'business', 'business_name', 'vehicle_category',
+            'name', 'description', 'base_fare', 'per_km_rate',
+            'per_minute_rate', 'minimum_fare', 'max_passengers',
+            'icon', 'is_active',
         )
         read_only_fields = ('id',)
+
+
+class TransportRouteListSerializer(serializers.ModelSerializer):
+    """Lightweight route list (no nested stops/schedules)"""
+    business_name = serializers.CharField(
+        source='business.name', read_only=True)
+    stops_count = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model = TransportRoute
+        fields = (
+            'id', 'business', 'business_name', 'name', 'route_code',
+            'transport_type', 'origin', 'destination',
+            'distance_km', 'estimated_duration_minutes',
+            'amenities', 'is_active', 'is_return_available',
+            'stops_count',
+        )
+ 
+    def get_stops_count(self, obj):
+        return obj.stops.count()
+ 
 
 
 class RideTrackingSerializer(serializers.ModelSerializer):

@@ -5,7 +5,6 @@ from apps.common.views import api_response
 from apps.common.permissions import IsAdmin
 from apps.common.utils import generate_reference
 from apps.drivers.models import DriverProfile
-from .models import Shipment, ShipmentTracking
 from apps.common.email import send_shipment_confirmation_email
 from apps.common.logistics_pricing import calculate_logistics_price
 from apps.drivers.utils import calculate_distance
@@ -18,11 +17,21 @@ from apps.drivers.utils import calculate_distance
 from apps.common.utils import generate_reference
 from apps.wallet.utils import get_or_create_wallet
 from apps.common.email import send_shipment_confirmation_email
+from .models import (
+    Shipment, 
+    ShipmentTracking, 
+    ShipmentVehicleCategory,
+    ShipmentServiceCategory, 
+    ShipmentVehicleType
+)
 
 from .serializers import (
     ShipmentSerializer,
     CreateShipmentSerializer,
     ShipmentTrackingSerializer,
+    ShipmentVehicleCategorySerializer,
+    ShipmentVehicleTypeSerializer,
+    ShipmentServiceCategorySerializer,
 )
 from .utils import (
     calculate_shipment_price,
@@ -31,16 +40,204 @@ from .utils import (
 )
 
 
-# ══════════════════════════════════════════════════════════
-# ShipmentListCreateView — corrected POST
-# Fixes:
-#   1. business_id resolved + saved on shipment (company page bookings)
-#   2. Wallet payment now holds escrow (was debiting without hold)
-#   3. Tracking order: pending FIRST, then assigned
-#   4. Auto-assign company-scoped via shipment.business
-# Requires in CreateShipmentSerializer:
-#   business_id = serializers.IntegerField(required=False, allow_null=True)
-# ══════════════════════════════════════════════════════════
+class ShipmentVehicleCategoryListView(APIView):
+    """
+    GET /api/v1/shipments/vehicle-categories/
+        ?transport_mode=land|sea|air
+    Public — read only (platform-wide)
+    """
+    permission_classes = []
+
+    def get(self, request):
+        cats = ShipmentVehicleCategory.objects.filter(is_active=True)
+        mode = request.query_params.get('transport_mode')
+        if mode:
+            cats = cats.filter(transport_mode=mode)
+        serializer = ShipmentVehicleCategorySerializer(cats, many=True)
+        return api_response('success', 'Vehicle categories retrieved',
+            data={'count': cats.count(), 'results': serializer.data})
+
+
+class ShipmentVehicleTypeListCreateView(APIView):
+    """
+    GET  /api/v1/shipments/vehicle-types/?business_id=N
+    POST /api/v1/shipments/vehicle-types/ (business owner)
+         Body: { business, category, name, max_weight_kg,
+                 base_fare, per_km_rate, icon }
+    """
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAuthenticated()]
+        return []
+
+    def get(self, request):
+        business_id = request.query_params.get('business_id')
+        if not business_id:
+            return api_response('error', 'business_id required',
+                http_status=status.HTTP_400_BAD_REQUEST)
+        vts = ShipmentVehicleType.objects.filter(
+            business_id=business_id, is_active=True)
+        serializer = ShipmentVehicleTypeSerializer(vts, many=True)
+        return api_response('success', 'Vehicle types retrieved',
+            data={'count': vts.count(), 'results': serializer.data})
+
+    def post(self, request):
+        from apps.marketplace.models import Business
+        business_id = request.data.get('business')
+        try:
+            business = Business.objects.get(
+                pk=business_id, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found or not yours',
+                http_status=status.HTTP_403_FORBIDDEN)
+        serializer = ShipmentVehicleTypeSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(business=business)
+            return api_response('success', 'Vehicle type created',
+                data=serializer.data,
+                http_status=status.HTTP_201_CREATED)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+
+class ShipmentVehicleTypeDetailView(APIView):
+    """GET/PATCH/DELETE /api/v1/shipments/vehicle-types/<pk>/"""
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return ShipmentVehicleType.objects.get(pk=pk)
+        except ShipmentVehicleType.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        vt = self.get_object(pk)
+        if not vt:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        return api_response('success', 'Retrieved',
+            data=ShipmentVehicleTypeSerializer(vt).data)
+
+    def patch(self, request, pk):
+        vt = self.get_object(pk)
+        if not vt:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        if vt.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN)
+        serializer = ShipmentVehicleTypeSerializer(
+            vt, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Updated',
+                data=serializer.data)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        vt = self.get_object(pk)
+        if not vt:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        if vt.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN)
+        vt.delete()
+        return api_response('success', 'Deleted',
+            http_status=status.HTTP_204_NO_CONTENT)
+
+
+class ShipmentServiceCategoryListCreateView(APIView):
+    """
+    GET  /api/v1/shipments/service-categories/?business_id=N
+    POST /api/v1/shipments/service-categories/ (business owner)
+    """
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsAuthenticated()]
+        return []
+
+    def get(self, request):
+        business_id = request.query_params.get('business_id')
+        if not business_id:
+            return api_response('error', 'business_id required',
+                http_status=status.HTTP_400_BAD_REQUEST)
+        cats = ShipmentServiceCategory.objects.filter(
+            business_id=business_id, is_active=True)
+        serializer = ShipmentServiceCategorySerializer(cats, many=True)
+        return api_response('success', 'Service categories retrieved',
+            data={'count': cats.count(), 'results': serializer.data})
+
+    def post(self, request):
+        from apps.marketplace.models import Business
+        business_id = request.data.get('business')
+        try:
+            business = Business.objects.get(
+                pk=business_id, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found or not yours',
+                http_status=status.HTTP_403_FORBIDDEN)
+        serializer = ShipmentServiceCategorySerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(business=business)
+            return api_response('success', 'Service category created',
+                data=serializer.data,
+                http_status=status.HTTP_201_CREATED)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+
+class ShipmentServiceCategoryDetailView(APIView):
+    """GET/PATCH/DELETE /api/v1/shipments/service-categories/<pk>/"""
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return ShipmentServiceCategory.objects.get(pk=pk)
+        except ShipmentServiceCategory.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        cat = self.get_object(pk)
+        if not cat:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        return api_response('success', 'Retrieved',
+            data=ShipmentServiceCategorySerializer(cat).data)
+
+    def patch(self, request, pk):
+        cat = self.get_object(pk)
+        if not cat:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        if cat.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN)
+        serializer = ShipmentServiceCategorySerializer(
+            cat, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Updated', data=serializer.data)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        cat = self.get_object(pk)
+        if not cat:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        if cat.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN)
+        cat.delete()
+        return api_response('success', 'Deleted',
+            http_status=status.HTTP_204_NO_CONTENT)
+
 
 class ShipmentListCreateView(APIView):
     permission_classes = [IsAuthenticated]

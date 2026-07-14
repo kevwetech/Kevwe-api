@@ -40,44 +40,131 @@ from django.utils import timezone
 
 
 class VehicleTypeListView(APIView):
-    """List available vehicle types"""
+    """
+    GET  /api/v1/rides/vehicle-types/
+         ?business_id=N → that business's types + platform defaults
+         (no business_id) → platform-wide types only
+    POST /api/v1/rides/vehicle-types/ (business owner or admin)
+         Body: { business, vehicle_category, name, base_fare, ... }
+    """
     permission_classes = []
-
+ 
     def get(self, request):
-        vehicle_types = RideVehicleType.objects.filter(
-            is_active=True
-        )
+        business_id = request.query_params.get('business_id')
+        if business_id:
+            # platform defaults + this business's custom types
+            from django.db.models import Q
+            vehicle_types = RideVehicleType.objects.filter(
+                Q(business__isnull=True) | Q(business_id=business_id),
+                is_active=True,
+            )
+        else:
+            vehicle_types = RideVehicleType.objects.filter(
+                is_active=True, business__isnull=True
+            )
+ 
         serializer = RideVehicleTypeSerializer(
-            vehicle_types,
-            many=True,
-            context={'request': request}
+            vehicle_types, many=True, context={'request': request}
         )
-        return api_response(
-            'success',
-            'Vehicle types retrieved successfully',
-            data={
-                'count': vehicle_types.count(),
-                'results': serializer.data
-            }
+        return api_response('success', 'Vehicle types retrieved',
+            data={'count': vehicle_types.count(), 'results': serializer.data}
         )
-
+ 
     def post(self, request):
-        """Admin create vehicle type"""
+        if not request.user.is_authenticated:
+            return api_response('error', 'Authentication required',
+                http_status=status.HTTP_401_UNAUTHORIZED
+            )
+ 
+        business_id = request.data.get('business')
+        if business_id:
+            from apps.marketplace.models import Business
+            try:
+                business = Business.objects.get(
+                    pk=business_id, owner=request.user
+                )
+            except Business.DoesNotExist:
+                return api_response('error', 'Business not found or not yours',
+                    http_status=status.HTTP_403_FORBIDDEN
+                )
+ 
         serializer = RideVehicleTypeSerializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
-            return api_response(
-                'success',
-                'Vehicle type created successfully',
-                data=serializer.data,
-                http_status=status.HTTP_201_CREATED
+            return api_response('success', 'Vehicle type created',
+                data=serializer.data, http_status=status.HTTP_201_CREATED
             )
-        return api_response(
-            'error',
-            'Creation failed',
+        return api_response('error', 'Validation failed',
             errors=serializer.errors,
             http_status=status.HTTP_400_BAD_REQUEST
         )
+ 
+class VehicleTypeDetailView(APIView):
+    """
+    GET/PATCH/DELETE /api/v1/rides/vehicle-types/<pk>/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return RideVehicleType.objects.get(pk=pk)
+        except RideVehicleType.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        vt = self.get_object(pk)
+        if not vt:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+        return api_response('success', 'Vehicle type retrieved',
+            data=RideVehicleTypeSerializer(vt).data
+        )
+
+    def patch(self, request, pk):
+        vt = self.get_object(pk)
+        if not vt:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+        if vt.business and vt.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = RideVehicleTypeSerializer(
+            vt, data=request.data, partial=True
+        )
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Updated',
+                data=serializer.data
+            )
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST
+        )
+
+    def delete(self, request, pk):
+        vt = self.get_object(pk)
+        if not vt:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND
+            )
+        if vt.business and vt.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN
+            )
+        if not vt.business:
+            return api_response('error',
+                'Cannot delete platform-wide vehicle types',
+                http_status=status.HTTP_403_FORBIDDEN
+            )
+        vt.delete()
+        return api_response('success', 'Deleted',
+            http_status=status.HTTP_204_NO_CONTENT
+        )
+
+
 
 
 class EstimateFareView(APIView):
@@ -582,6 +669,86 @@ class AdminRideListView(APIView):
             }
         )
 
+
+
+class TransportRouteCreateView(APIView):
+    """
+    POST /api/v1/rides/routes/
+    Body: { business, name, origin, destination, distance_km,
+            estimated_duration_minutes, transport_type, amenities }
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from apps.marketplace.models import Business
+        business_id = request.data.get('business')
+        try:
+            business = Business.objects.get(
+                pk=business_id, owner=request.user)
+        except Business.DoesNotExist:
+            return api_response('error', 'Business not found or not yours',
+                http_status=status.HTTP_403_FORBIDDEN)
+
+        serializer = TransportRouteSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(business=business)
+            return api_response('success', 'Route created',
+                data=serializer.data,
+                http_status=status.HTTP_201_CREATED)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+
+class TransportRouteDetailView(APIView):
+    """
+    GET/PATCH/DELETE /api/v1/rides/routes/<pk>/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk):
+        try:
+            return TransportRoute.objects.get(pk=pk)
+        except TransportRoute.DoesNotExist:
+            return None
+
+    def get(self, request, pk):
+        route = self.get_object(pk)
+        if not route:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        return api_response('success', 'Route retrieved',
+            data=TransportRouteSerializer(route).data)
+
+    def patch(self, request, pk):
+        route = self.get_object(pk)
+        if not route:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        if route.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN)
+        serializer = TransportRouteSerializer(
+            route, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return api_response('success', 'Route updated',
+                data=serializer.data)
+        return api_response('error', 'Validation failed',
+            errors=serializer.errors,
+            http_status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        route = self.get_object(pk)
+        if not route:
+            return api_response('error', 'Not found',
+                http_status=status.HTTP_404_NOT_FOUND)
+        if route.business.owner != request.user:
+            return api_response('error', 'Not your business',
+                http_status=status.HTTP_403_FORBIDDEN)
+        route.delete()
+        return api_response('success', 'Route deleted',
+            http_status=status.HTTP_204_NO_CONTENT)
 
 
 # ── Route search ──────────────────────────────────

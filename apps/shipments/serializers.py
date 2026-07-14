@@ -1,5 +1,56 @@
 from rest_framework import serializers
-from .models import Shipment, ShipmentTracking
+from .models import (
+    Shipment, 
+    ShipmentTracking, 
+    ShipmentVehicleCategory,
+    ShipmentServiceCategory, 
+    ShipmentVehicleType
+)
+
+
+
+class ShipmentVehicleCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShipmentVehicleCategory
+        fields = (
+            'id', 'transport_mode', 'name', 'slug', 'description',
+            'icon', 'max_weight_kg', 'is_active', 'order',
+        )
+ 
+ 
+class ShipmentVehicleTypeSerializer(serializers.ModelSerializer):
+    business_name = serializers.CharField(
+        source='business.name', read_only=True)
+    category_name = serializers.CharField(
+        source='category.name', read_only=True)
+    transport_mode = serializers.CharField(
+        source='category.transport_mode', read_only=True)
+ 
+    class Meta:
+        model = ShipmentVehicleType
+        fields = (
+            'id', 'business', 'business_name', 'category',
+            'category_name', 'transport_mode', 'name', 'description',
+            'max_weight_kg', 'base_fare', 'per_km_rate',
+            'icon', 'is_active', 'order',
+        )
+        read_only_fields = ('id',)
+ 
+ 
+class ShipmentServiceCategorySerializer(serializers.ModelSerializer):
+    business_name = serializers.CharField(
+        source='business.name', read_only=True)
+ 
+    class Meta:
+        model = ShipmentServiceCategory
+        fields = (
+            'id', 'business', 'business_name', 'name', 'slug',
+            'description', 'icon',
+            'estimated_days_min', 'estimated_days_max',
+            'is_active', 'order',
+        )
+        read_only_fields = ('id', 'slug')
+ 
 
 
 class ShipmentTrackingSerializer(serializers.ModelSerializer):

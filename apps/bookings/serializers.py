@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import (
+    BookableItemCategory,
     BookableItem,
     BookableItemAvailability,
     BookingPolicy,
@@ -15,6 +16,20 @@ from .models import (
 )
 
 
+class BookableItemCategorySerializer(serializers.ModelSerializer):
+    items_count = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model = BookableItemCategory
+        fields = (
+            'id', 'business', 'name', 'slug', 'description',
+            'icon', 'order', 'is_active', 'items_count', 'created_at',
+        )
+        read_only_fields = ('id', 'slug', 'created_at')
+ 
+    def get_items_count(self, obj):
+        return obj.items.filter(is_active=True).count()
+ 
 class BookingPolicySerializer(serializers.ModelSerializer):
     class Meta:
         model = BookingPolicy
@@ -51,6 +66,7 @@ class BookableItemAvailabilitySerializer(
             'notes',
         )
         read_only_fields = ('id',)
+
 
 
 class BookableItemSerializer(serializers.ModelSerializer):
@@ -118,6 +134,17 @@ class BookableItemSerializer(serializers.ModelSerializer):
             'total_ratings',
             'effective_commission_rate',
             'created_at',
+        )
+
+class BookableItemCategoryWithItemsSerializer(serializers.ModelSerializer):
+    """Full category with its items — used for hotel room listing page."""
+    items = BookableItemSerializer(many=True, read_only=True)
+ 
+    class Meta:
+        model = BookableItemCategory
+        fields = (
+            'id', 'name', 'slug', 'description', 'icon',
+            'order', 'is_active', 'items',
         )
 
 

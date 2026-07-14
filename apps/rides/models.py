@@ -7,6 +7,26 @@ from apps.drivers.models import DriverProfile
 # ── Ride-hailing (existing, unchanged) ───────────
 
 class RideVehicleType(TimeStampedModel):
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='vehicle_types',
+        help_text='None = platform-wide default available to all'
+    )
+    vehicle_category = models.CharField(
+        max_length=20,
+        choices=(
+            ('bike',  'Bike'),
+            ('car',   'Car'),
+            ('van',   'Van'),
+            ('bus',   'Bus'),
+            ('truck', 'Truck'),
+            ('boat',  'Boat'),
+        ),
+        default='car',
+        help_text='Global category for marketplace filtering'
+    )
     name = models.CharField(max_length=50)
     description = models.CharField(max_length=255)
     base_fare = models.DecimalField(max_digits=10, decimal_places=2, default=500)

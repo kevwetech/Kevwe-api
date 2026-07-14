@@ -9,7 +9,12 @@ from .views import (
     EstimateShipmentPriceView,
     VerifyShipmentDeliveryView, 
     GenerateDeliveryOTPView,
-    MarkDeliveredView
+    MarkDeliveredView,
+    ShipmentServiceCategoryDetailView,
+    ShipmentServiceCategoryListCreateView,
+    ShipmentVehicleTypeDetailView,
+    ShipmentVehicleTypeListCreateView,
+    ShipmentVehicleCategoryListView
 )
 
 urlpatterns = [
@@ -17,6 +22,12 @@ urlpatterns = [
     path('', ShipmentListCreateView.as_view(), name='shipments'),
     path('<int:pk>/', ShipmentDetailView.as_view(), name='shipment_detail'),
     path('estimate/', EstimateShipmentPriceView.as_view(), name='estimate_shipment'),
+
+    path('vehicle-categories/', ShipmentVehicleCategoryListView.as_view(), name='shipment_vehicle_categories'),
+    path('vehicle-types/', ShipmentVehicleTypeListCreateView.as_view(), name='shipment_vehicle_types'),
+    path('vehicle-types/<int:pk>/', ShipmentVehicleTypeDetailView.as_view(), name='shipment_vehicle_type_detail'),
+    path('service-categories/', ShipmentServiceCategoryListCreateView.as_view(), name='shipment_service_categories'),
+    path('service-categories/<int:pk>/', ShipmentServiceCategoryDetailView.as_view(), name='shipment_service_category_detail'),
 
     # Public tracking
     path('track/<str:tracking_number>/', TrackShipmentView.as_view(), name='track_shipment'),

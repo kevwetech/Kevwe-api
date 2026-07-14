@@ -14,7 +14,8 @@ from .views import (
     TransportBookingDetailView, TransportBoardingView,
     TransportTrackingView, TransportRatingView,
     TransportVehicleView, TransportCancellationPolicyView,
-    VerifyRideStartView,
+    VerifyRideStartView, TransportRouteDetailView, 
+    TransportRouteCreateView, VehicleTypeDetailView
 )
 
 urlpatterns = [
@@ -33,6 +34,10 @@ urlpatterns = [
     # Routes
     path('transport/routes/',                   TransportRouteListView.as_view(),        name='transport_routes'),
     path('transport/routes/search/',            TransportRouteSearchView.as_view(),      name='transport_route_search'),
+    path('vehicle-types/<int:pk>/', VehicleTypeDetailView.as_view(), name='vehicle_type_detail'),
+    path('routes/', TransportRouteCreateView.as_view(), name='transport_route_create'),
+    path('routes/<int:pk>/', TransportRouteDetailView.as_view(), name='transport_route_detail'),
+
 
     # Schedules
     path('transport/schedules/',                TransportScheduleListView.as_view(),     name='transport_schedules'),

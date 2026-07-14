@@ -1688,6 +1688,9 @@ class BusinessCatalogView(APIView):
 
             catalog.append(category_data)
 
+        order_settings = getattr(business, 'order_settings', None)
+        analytics = business.analytics.first() if hasattr(business, 'analytics') else None
+
         return api_response(
             'success',
             'Business catalog retrieved successfully',
@@ -1698,11 +1701,11 @@ class BusinessCatalogView(APIView):
                     'logo': request.build_absolute_uri(
                         business.logo.url
                     ) if business.logo else None,
-                    'delivery_fee': str(business.delivery_fee),
-                    'delivery_time_minutes': business.delivery_time_minutes,
-                    'min_order_amount': str(business.min_order_amount),
-                    'rating': str(business.rating),
-                    'is_open_now': business.is_open_now,
+                    'delivery_fee': str(getattr(business, 'delivery_fee', 0)),
+                    'delivery_time_minutes': getattr(business, 'delivery_time_minutes', None),
+                    'min_order_amount': str(getattr(business, 'min_order_amount', 0)),
+                    'rating': str(getattr(analytics, 'average_rating', 0)),
+                    'is_open_now': business.is_open,
                 },
                 'total_categories': roots.count(),
                 'catalog': catalog,
