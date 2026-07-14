@@ -34,7 +34,7 @@ class RideVehicleType(TimeStampedModel):
     per_minute_rate = models.DecimalField(max_digits=10, decimal_places=2, default=10)
     minimum_fare = models.DecimalField(max_digits=10, decimal_places=2, default=800)
     max_passengers = models.IntegerField(default=4)
-    icon = models.ImageField(upload_to='vehicle_types/', null=True, blank=True)
+    icon = models.CharField(max_length=10, blank=True, null=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
