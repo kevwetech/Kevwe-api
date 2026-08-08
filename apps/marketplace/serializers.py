@@ -6,6 +6,9 @@ from .models import (
     BookingSettings, ServiceSettings,
     BusinessSubtype, AppointmentSettings,
     RideSettings, ShipmentSettings,
+    BusinessFAQ, BusinessPromotion,
+    BusinessPolicy, BusinessContentBlock,
+    InteractionForm
 )
 
 
@@ -163,6 +166,7 @@ class BusinessSerializer(serializers.ModelSerializer):
     industry_interaction_type = serializers.CharField(
         source='industry.interaction_type', read_only=True
     )
+    interaction_types = serializers.ReadOnlyField()
     category_name = serializers.CharField(
         source='category.name', read_only=True
     )
@@ -185,6 +189,10 @@ class BusinessSerializer(serializers.ModelSerializer):
     commission_rate = serializers.DecimalField(
         max_digits=5, decimal_places=2, read_only=True
     )
+    faqs = serializers.SerializerMethodField()
+    page_promotions = serializers.SerializerMethodField()
+    policies = serializers.SerializerMethodField()
+    content_blocks = serializers.SerializerMethodField()
 
     # Nested settings (shown if they exist)
     settings = BusinessSettingsSerializer(read_only=True)
@@ -194,6 +202,7 @@ class BusinessSerializer(serializers.ModelSerializer):
     appointment_settings = AppointmentSettingsSerializer(read_only=True)
     ride_settings = RideSettingsSerializer(read_only=True)
     shipment_settings = ShipmentSettingsSerializer(read_only=True)
+    verified_badges = serializers.ReadOnlyField()
 
     class Meta:
         model = Business
@@ -203,6 +212,29 @@ class BusinessSerializer(serializers.ModelSerializer):
             'approved_by', 'is_verified',
             'created_at', 'updated_at'
         )
+
+    def get_faqs(self, obj):
+        qs = obj.faqs.filter(is_active=True)
+        return BusinessFAQSerializer(qs, many=True, context=self.context).data
+
+    def get_page_promotions(self, obj):
+        from django.utils import timezone
+        from django.db.models import Q
+        now = timezone.now()
+        qs = obj.page_promotions.filter(is_active=True).filter(
+            Q(starts_at__isnull=True) | Q(starts_at__lte=now)
+        ).filter(
+            Q(ends_at__isnull=True) | Q(ends_at__gte=now)
+        )
+        return BusinessPromotionSerializer(qs, many=True, context=self.context).data
+
+    def get_policies(self, obj):
+        qs = obj.policies.filter(is_active=True)
+        return BusinessPolicySerializer(qs, many=True, context=self.context).data
+
+    def get_content_blocks(self, obj):
+        qs = obj.content_blocks.filter(is_active=True)
+        return BusinessContentBlockSerializer(qs, many=True, context=self.context).data
 
 
 class CreateBusinessSerializer(serializers.Serializer):
@@ -235,3 +267,82 @@ class CreateBusinessSerializer(serializers.Serializer):
         child=serializers.CharField(), required=False
     )
 
+class BusinessFAQSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusinessFAQ
+        fields = ['id', 'business', 'question', 'answer', 'order', 'is_active']
+        read_only_fields = ['business']
+
+
+class BusinessPromotionSerializer(serializers.ModelSerializer):
+    is_live = serializers.ReadOnlyField()
+
+    class Meta:
+        model = BusinessPromotion
+        fields = ['id', 'business', 'kind', 'title', 'description', 'icon',
+                  'image', 'starts_at', 'ends_at', 'cta_label', 'cta_url',
+                  'order', 'is_active', 'is_live']
+        read_only_fields = ['business']
+
+
+class BusinessPolicySerializer(serializers.ModelSerializer):
+    policy_type_display = serializers.CharField(
+        source='get_policy_type_display', read_only=True)
+
+    class Meta:
+        model = BusinessPolicy
+        fields = ['id', 'business', 'policy_type', 'policy_type_display',
+                  'title', 'content', 'icon', 'order', 'is_active']
+        read_only_fields = ['business']
+
+
+class BusinessContentBlockSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BusinessContentBlock
+        fields = ['id', 'business', 'title', 'content', 'image',
+                  'order', 'is_active']
+        read_only_fields = ['business']
+
+
+class InteractionFormSerializer(serializers.ModelSerializer):
+    interaction_type_display = serializers.CharField(
+        source='get_interaction_type_display', read_only=True)
+    scope_label = serializers.SerializerMethodField()
+    industry_name = serializers.CharField(source='industry.name', read_only=True, default=None)
+    category_name = serializers.CharField(source='category.name', read_only=True, default=None)
+    business_name = serializers.CharField(source='business.name', read_only=True, default=None)
+
+    class Meta:
+        model = InteractionForm
+        fields = [
+            'id', 'interaction_type', 'interaction_type_display',
+            'industry', 'industry_name', 'category', 'category_name',
+            'business', 'business_name', 'form_key', 'name', 'schema',
+            'scope_label', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['created_at', 'updated_at']
+
+    def get_scope_label(self, obj):
+        return str(obj.business or obj.category or obj.industry or 'unscoped')
+
+    def validate(self, data):
+        industry = data.get('industry', getattr(self.instance, 'industry', None))
+        category = data.get('category', getattr(self.instance, 'category', None))
+        business = data.get('business', getattr(self.instance, 'business', None))
+        scopes = [bool(industry), bool(category), bool(business)]
+        if sum(scopes) != 1:
+            raise serializers.ValidationError(
+                'Set exactly one of industry, category or business — '
+                'that decides how widely this form applies.')
+        return data
+
+
+class InteractionFormResolveSerializer(serializers.Serializer):
+    '''What GET /marketplace/interaction-forms/resolve/ returns —
+    the SAME shape business.interaction_forms produces internally,
+    exposed standalone for admin preview / debugging.'''
+    interaction_type = serializers.CharField()
+    form_key = serializers.CharField(allow_null=True)
+    name = serializers.CharField(allow_null=True)
+    schema = serializers.JSONField(allow_null=True)
+    resolved_from = serializers.CharField(allow_null=True)

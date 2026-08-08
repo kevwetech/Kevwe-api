@@ -1,4 +1,4 @@
-from rest_framework import status
+from rest_framework import generics, permissions, status
 from django.db import models
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
@@ -8,12 +8,31 @@ from apps.common.views import api_response
 from apps.common.permissions import IsAdmin, IsVendor
 from apps.locations.models import City, State, Country
 from apps.notifications.utils import send_notification
+from rest_framework import generics, permissions
+from django.shortcuts import get_object_or_404
+from rest_framework.response import Response
 from .models import (
     Industry, BusinessCategory, Business,
     BusinessHours, BusinessImage, BusinessDocument,
     BusinessSettings, OrderSettings,
     BookingSettings, ServiceSettings,
     AppointmentSettings, BusinessSubtype,
+    BusinessFAQ, BusinessPromotion,
+    BusinessPolicy, BusinessContentBlock,
+    InteractionForm,
+)
+from .serializers import(
+    IndustrySerializer, BusinessCategorySerializer,
+    BusinessHoursSerializer, BusinessImageSerializer,
+    BusinessDocumentSerializer, BusinessSettingsSerializer,
+    BusinessSubtypeSerializer, OrderSettingsSerializer,
+    BookingSettingsSerializer, ServiceSettingsSerializer,
+    AppointmentSettingsSerializer, RideSettingsSerializer,
+    ShipmentSettingsSerializer, BusinessSerializer,
+    CreateBusinessSerializer, BusinessFAQSerializer,
+    BusinessPromotionSerializer, BusinessPolicySerializer,
+    BusinessContentBlockSerializer, InteractionFormSerializer, 
+    InteractionFormResolveSerializer
 )
 
 
@@ -890,6 +909,80 @@ class BusinessDocumentView(APIView):
         )
 
 
+class IsBusinessOwner(permissions.BasePermission):
+    '''Owner-authored means owner-authored. Anyone may read; only the
+    owner of THIS business may write to it.'''
+    message = 'You do not own this business.'
+
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        if not request.user or not request.user.is_authenticated:
+            return False
+        business = view.get_business()
+        return business.owner_id == request.user.id
+
+
+class BusinessContentMixin:
+    permission_classes = [IsBusinessOwner]
+    serializer_class = None
+    model = None
+
+    def get_business(self):
+        return get_object_or_404(Business, pk=self.kwargs['business_id'])
+
+    def get_queryset(self):
+        qs = self.model.objects.filter(business_id=self.kwargs['business_id'])
+        # Drafts are the owner's business alone.
+        if not self._is_owner():
+            qs = qs.filter(is_active=True)
+        return qs
+
+    def _is_owner(self):
+        u = self.request.user
+        return bool(u and u.is_authenticated
+                    and self.get_business().owner_id == u.id)
+
+    def perform_create(self, serializer):
+        serializer.save(business=self.get_business())
+
+
+class BusinessFAQListCreate(BusinessContentMixin, generics.ListCreateAPIView):
+    model = BusinessFAQ
+    serializer_class = BusinessFAQSerializer
+
+class BusinessFAQDetail(BusinessContentMixin, generics.RetrieveUpdateDestroyAPIView):
+    model = BusinessFAQ
+    serializer_class = BusinessFAQSerializer
+
+
+class BusinessPromotionListCreate(BusinessContentMixin, generics.ListCreateAPIView):
+    model = BusinessPromotion
+    serializer_class = BusinessPromotionSerializer
+
+class BusinessPromotionDetail(BusinessContentMixin, generics.RetrieveUpdateDestroyAPIView):
+    model = BusinessPromotion
+    serializer_class = BusinessPromotionSerializer
+
+
+class BusinessPolicyListCreate(BusinessContentMixin, generics.ListCreateAPIView):
+    model = BusinessPolicy
+    serializer_class = BusinessPolicySerializer
+
+class BusinessPolicyDetail(BusinessContentMixin, generics.RetrieveUpdateDestroyAPIView):
+    model = BusinessPolicy
+    serializer_class = BusinessPolicySerializer
+
+
+class BusinessContentBlockListCreate(BusinessContentMixin, generics.ListCreateAPIView):
+    model = BusinessContentBlock
+    serializer_class = BusinessContentBlockSerializer
+
+class BusinessContentBlockDetail(BusinessContentMixin, generics.RetrieveUpdateDestroyAPIView):
+    model = BusinessContentBlock
+    serializer_class = BusinessContentBlockSerializer
+
+
 # ── Nearby Businesses ─────────────────────────────────────
 
 class NearbyBusinessesView(APIView):
@@ -1245,3 +1338,87 @@ class UniversalSearchView(APIView):
         }
 
         return api_response('success', f'Search results for "{q}"', data=results)
+
+
+
+class IsAdminOrReadOnly(permissions.BasePermission):
+    '''Anyone can read the form catalogue; only platform staff can
+    author or edit one. Authoring a field contract for "how does a
+    car rental booking work" is not a per-business decision.'''
+    def has_permission(self, request, view):
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return bool(request.user and request.user.is_authenticated and request.user.is_staff)
+
+
+class InteractionFormListCreate(generics.ListCreateAPIView):
+    '''GET  /marketplace/interaction-forms/?interaction_type=bookings
+       POST /marketplace/interaction-forms/   (staff only)'''
+    serializer_class = InteractionFormSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+    def get_queryset(self):
+        qs = InteractionForm.objects.select_related('industry', 'category', 'business')
+        interaction_type = self.request.query_params.get('interaction_type')
+        if interaction_type:
+            qs = qs.filter(interaction_type=interaction_type)
+        industry_id = self.request.query_params.get('industry_id')
+        if industry_id:
+            qs = qs.filter(industry_id=industry_id)
+        return qs
+
+
+class InteractionFormDetail(generics.RetrieveUpdateDestroyAPIView):
+    '''GET/PATCH/DELETE /marketplace/interaction-forms/<pk>/  (write = staff only)'''
+    queryset = InteractionForm.objects.select_related('industry', 'category', 'business')
+    serializer_class = InteractionFormSerializer
+    permission_classes = [IsAdminOrReadOnly]
+
+
+class InteractionFormResolveView(APIView):
+    '''GET /marketplace/interaction-forms/resolve/?interaction_type=bookings&business_id=2
+
+    Same resolution business.interaction_forms uses internally
+    (business beats category beats industry), exposed standalone
+    so the admin panel — or anyone debugging why a business landed
+    on a particular form — can see it without fetching the whole
+    business payload.'''
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        interaction_type = request.query_params.get('interaction_type')
+        business_id = request.query_params.get('business_id')
+
+        if not interaction_type or not business_id:
+            return Response(
+                {'status': 'error', 'message': 'interaction_type and business_id are both required.'},
+                status=status.HTTP_400_BAD_REQUEST)
+
+        business = get_object_or_404(Business, pk=business_id)
+        row = InteractionForm.resolve(interaction_type, business)
+
+        if not row:
+            data = {
+                'interaction_type': interaction_type,
+                'form_key': None,
+                'name': None,
+                'schema': None,
+                'resolved_from': None,
+            }
+        else:
+            if row.business_id == business.id:
+                resolved_from = 'business'
+            elif row.category_id and row.category_id == business.category_id:
+                resolved_from = 'category'
+            else:
+                resolved_from = 'industry'
+            data = {
+                'interaction_type': interaction_type,
+                'form_key': row.form_key,
+                'name': row.name,
+                'schema': row.schema,
+                'resolved_from': resolved_from,
+            }
+
+        serializer = InteractionFormResolveSerializer(data)
+        return Response({'status': 'success', 'data': serializer.data})

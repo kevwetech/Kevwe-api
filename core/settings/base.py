@@ -63,6 +63,8 @@ INSTALLED_APPS = [
     'apps.services',
     'apps.staff',
     'apps.appointments',
+    'apps.promotions',
+    'apps.idempotency',
 ]
 
 MIDDLEWARE = [

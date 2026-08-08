@@ -70,13 +70,7 @@ class SubscriptionAnalyticsAdmin(admin.ModelAdmin):
 
 @admin.register(PromotionAnalytics)
 class PromotionAnalyticsAdmin(admin.ModelAdmin):
-    list_display = (
-        'name', 'promotion_type', 'code',
-        'business', 'total_uses',
-        'total_discount_given',
-        'total_revenue_generated',
-        'roi', 'is_active'
-    )
-    list_filter = ('promotion_type', 'is_active')
-    search_fields = ('name', 'code', 'business__name')
-    ordering = ('-created_at',)
+    list_display = ('promotion', 'total_revenue_generated', 'roi',
+                     'unique_users', 'new_customer_uses', 'returning_customer_uses')
+    search_fields = ('promotion__name', 'promotion__code')
+    list_filter = ('promotion__promotion_type',)

@@ -6,6 +6,9 @@ from .models import (
     BusinessHours, BusinessImage, BusinessDocument,
     BusinessSubtype, AppointmentSettings,
     RideSettings, ShipmentSettings,
+    BusinessFAQ, BusinessPromotion,
+    BusinessPolicy, BusinessContentBlock,
+    InteractionForm
 )
 
 
@@ -23,22 +26,43 @@ class IndustryAdmin(admin.ModelAdmin):
 
 @admin.register(BusinessCategory)
 class BusinessCategoryAdmin(admin.ModelAdmin):
-    list_display = (
-        'name', 'industry', 'interaction_type',
-        'has_order_settings', 'has_booking_settings',
-        'has_service_settings', 'is_active'
+    list_display = ('name', 'industry', 'interaction_type', 'enabled_summary', 'is_active')
+
+    fieldsets = (
+        (None, {'fields': ('industry', 'name', 'slug', 'description',
+                           'icon', 'image', 'order', 'is_active')}),
+        ('Primary interaction', {
+            'fields': ('interaction_type',),
+            'description': 'The default experience only — first tab and main CTA. '
+                           'Businesses here can offer everything ticked below.',
+        }),
+        ('Enabled interactions', {
+            'fields': ('has_order_settings', 'has_booking_settings',
+                       'has_appointment_settings', 'has_service_settings',
+                       'has_scheduled_service_settings', 'has_ride_settings',
+                       'has_transport_settings', 'has_shipment_settings'),
+            'description': 'Every capability a business in this category may switch on. '
+                           'Hotel → Bookings + Orders. Salon → Appointments + Services + Orders. '
+                           'Restaurant → Orders + Bookings.',
+        }),
+        ('Commission & compliance', {
+            'fields': ('platform_commission', 'requires_certification'),
+            'classes': ('collapse',),
+        }),
     )
-    list_filter = (
-        'industry', 'has_order_settings',
-        'has_booking_settings', 'has_service_settings',
-        'is_active'
-    )
-    search_fields = ('name', 'industry__name')
-    prepopulated_fields = {'slug': ('name',)}
+
+    def enabled_summary(self, obj):
+        return ', '.join(obj.enabled_interactions) or '—'
+    enabled_summary.short_description = 'Enabled'
+
+class BusinessImageInline(admin.TabularInline):
+    model = BusinessImage
+    extra = 0
 
 
 @admin.register(Business)
 class BusinessAdmin(admin.ModelAdmin):
+    inlines = [BusinessImageInline]
     list_display = (
         'name', 'owner', 'industry', 'category',
         'status', 'is_verified', 'is_featured',
@@ -139,9 +163,6 @@ class BusinessHoursInline(admin.TabularInline):
     extra = 0
 
 
-class BusinessImageInline(admin.TabularInline):
-    model = BusinessImage
-    extra = 0
 
 
 class BusinessDocumentInline(admin.TabularInline):
@@ -196,3 +217,51 @@ class RideSettingsAdmin(admin.ModelAdmin):
 class ShipmentSettingsAdmin(admin.ModelAdmin):
     list_display = ['business', 'shipment_type', 'base_fee', 'offers_pickup', 'offers_insurance']
     list_filter  = ['shipment_type']
+
+
+class BusinessFAQInline(admin.TabularInline):
+    model = BusinessFAQ
+    extra = 1
+    fields = ('question', 'answer', 'order', 'is_active')
+
+class BusinessPromotionInline(admin.TabularInline):
+    model = BusinessPromotion
+    extra = 0
+    fields = ('kind', 'title', 'icon', 'starts_at', 'ends_at', 'order', 'is_active')
+
+class BusinessPolicyInline(admin.TabularInline):
+    model = BusinessPolicy
+    extra = 0
+    fields = ('policy_type', 'title', 'order', 'is_active')
+
+class BusinessContentBlockInline(admin.StackedInline):
+    model = BusinessContentBlock
+    extra = 0
+    fields = ('title', 'content', 'image', 'order', 'is_active')
+
+
+
+@admin.register(InteractionForm)
+class InteractionFormAdmin(admin.ModelAdmin):
+    list_display = ('form_key', 'interaction_type', 'scope_label_display', 'name')
+    list_filter = ('interaction_type',)
+    search_fields = ('form_key', 'name')
+
+    fieldsets = (
+        (None, {'fields': ('interaction_type', 'form_key', 'name')}),
+        ('Scope — set exactly ONE', {
+            'fields': ('industry', 'category', 'business'),
+            'description': 'Business beats category beats industry when more than '
+                          'one row could match the same business.',
+        }),
+        ('Field contract', {
+            'fields': ('schema',),
+            'description': 'Validation contract for the booking engine — NOT a '
+                          'rendering instruction. The dedicated frontend page for '
+                          'this form_key decides its own UI independently.',
+        }),
+    )
+
+    def scope_label_display(self, obj):
+        return obj.scope_label
+    scope_label_display.short_description = 'Scope'

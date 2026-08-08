@@ -824,151 +824,34 @@ class SubscriptionAnalytics(TimeStampedModel):
 
 
 class PromotionAnalytics(TimeStampedModel):
-    """
-    Track promotion and discount performance
-    """
-    PROMOTION_TYPE_CHOICES = (
-        ('discount', 'Discount Code'),
-        ('flash_sale', 'Flash Sale'),
-        ('bundle', 'Bundle Deal'),
-        ('free_delivery', 'Free Delivery'),
-        ('referral', 'Referral'),
-        ('loyalty', 'Loyalty Reward'),
-        ('first_order', 'First Order'),
-    )
+    '''Reporting only. The rule — code, discount, limits, schedule —
+    lives on promotions.Promotion. calculate_roi() reaches across
+    the link for total_discount_given, which moved there because
+    it's needed live (not just for reports) to track spend.'''
+    promotion = models.OneToOneField(
+        'promotions.Promotion', on_delete=models.CASCADE,
+        related_name='analytics'
+    )   # no longer nullable
 
-    name = models.CharField(max_length=255)
-    promotion_type = models.CharField(
-        max_length=20,
-        choices=PROMOTION_TYPE_CHOICES
-    )
-    code = models.CharField(
-        max_length=50,
-        blank=True,
-        null=True
-    )
-
-    # Scope
-    business = models.ForeignKey(
-        'marketplace.Business',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='promotions'
-    )  # null = platform-wide
-
-    # Discount
-    discount_type = models.CharField(
-        max_length=20,
-        default='percentage'
-    )  # percentage or fixed
-    discount_value = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0
-    )
-    min_order_amount = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0
-    )
-    max_discount_amount = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        null=True,
-        blank=True
-    )
-
-    # Limits
-    usage_limit = models.IntegerField(
-        default=0
-    )  # 0 = unlimited
-    per_user_limit = models.IntegerField(default=1)
-
-    # Schedule
-    starts_at = models.DateTimeField()
-    ends_at = models.DateTimeField(
-        null=True,
-        blank=True
-    )
-
-    # Performance metrics
-    total_uses = models.IntegerField(default=0)
     unique_users = models.IntegerField(default=0)
-    total_discount_given = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        default=0
-    )
     total_revenue_generated = models.DecimalField(
-        max_digits=12,
-        decimal_places=2,
-        default=0
-    )
+        max_digits=12, decimal_places=2, default=0)
     total_orders = models.IntegerField(default=0)
     avg_order_value = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0
-    )
-
-    # ROI
-    roi = models.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        default=0
-    )  # revenue / discount_given
-
-    # New vs returning customers
+        max_digits=10, decimal_places=2, default=0)
+    roi = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     new_customer_uses = models.IntegerField(default=0)
     returning_customer_uses = models.IntegerField(default=0)
 
-    is_active = models.BooleanField(default=True)
-    created_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='promotions'
-    )
-
     class Meta:
-        ordering = ['-created_at']
+        verbose_name_plural = 'Promotion analytics'
 
     def __str__(self):
-        return f"{self.name} ({self.promotion_type})"
-
-    @property
-    def is_valid_now(self):
-        from django.utils import timezone
-        now = timezone.now()
-        if not self.is_active:
-            return False
-        if now < self.starts_at:
-            return False
-        if self.ends_at and now > self.ends_at:
-            return False
-        if self.usage_limit > 0 and self.total_uses >= self.usage_limit:
-            return False
-        return True
-
-    @property
-    def usage_percentage(self):
-        if self.usage_limit > 0:
-            return round(
-                self.total_uses / self.usage_limit * 100,
-                1
-            )
-        return 0
+        return f'Analytics — {self.promotion}'
 
     def calculate_roi(self):
-        """Calculate ROI"""
-        from decimal import Decimal
-        if self.total_discount_given > 0:
-            self.roi = round(
-                float(self.total_revenue_generated) /
-                float(self.total_discount_given),
-                2
-            )
+        given = self.promotion.total_discount_given
+        if given > 0:
+            self.roi = round(float(self.total_revenue_generated) / float(given), 2)
             self.save()
         return self.roi

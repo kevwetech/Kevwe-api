@@ -12,7 +12,13 @@ from .views import (
     NearbyBusinessesView,
     AdminBusinessListView, AdminBusinessApproveView,
     AdminVerifyBusinessDocumentView,
-    AppointmentSettingsView, RideSettingsView, UniversalSearchView
+    AppointmentSettingsView, RideSettingsView, UniversalSearchView,
+    BusinessContentBlockDetail, BusinessFAQListCreate,
+    BusinessContentBlockListCreate, BusinessFAQDetail,
+    BusinessPolicyDetail, BusinessPromotionListCreate,
+    BusinessPolicyListCreate, BusinessPromotionDetail,
+    InteractionFormListCreate, InteractionFormResolveView,
+    InteractionFormDetail
 )
 
 urlpatterns = [
@@ -90,6 +96,50 @@ urlpatterns = [
         ServiceSettingsView.as_view(),
         name='service_settings'
     ),
+    path(
+        'businesses/<int:business_id>/faqs/',
+        BusinessFAQListCreate.as_view(), 
+        name='business_faqs'
+    ),
+    path(
+        'businesses/<int:business_id>/faqs/<int:pk>/',
+        BusinessFAQDetail.as_view(), 
+        name='business_faq_detail'
+    ),
+
+    path(
+        'businesses/<int:business_id>/promotions/',
+        BusinessPromotionListCreate.as_view(), 
+        name='business_promotions'
+    ),
+    path(
+        'businesses/<int:business_id>/promotions/<int:pk>/',
+        BusinessPromotionDetail.as_view(), 
+        name='business_promotion_detail'
+    ),
+
+    path(
+        'businesses/<int:business_id>/policies/',
+        BusinessPolicyListCreate.as_view(), 
+        name='business_policies'
+    ),
+    path(
+        'businesses/<int:business_id>/policies/<int:pk>/',
+        BusinessPolicyDetail.as_view(),
+        name='business_policy_detail'
+    ),
+
+    path(
+        'businesses/<int:business_id>/blocks/',
+        BusinessContentBlockListCreate.as_view(),
+        name='business_blocks'
+    ),
+    path(
+        'businesses/<int:business_id>/blocks/<int:pk>/',
+        BusinessContentBlockDetail.as_view(), 
+        name='business_block_detail'
+    ),
+
 
     # Hours, images, documents
     path(
@@ -106,6 +156,21 @@ urlpatterns = [
         'businesses/<int:pk>/documents/',
         BusinessDocumentView.as_view(),
         name='business_documents'
+    ),
+     path(
+        'interaction-forms/', 
+        InteractionFormListCreate.as_view(),
+        name='interaction_form_list'   
+    ),
+    path(
+        'interaction-forms/resolve/', 
+        InteractionFormResolveView.as_view(),
+        name='interaction_form_resolve'
+    ),
+    path(
+        'interaction-forms/<int:pk>/', 
+        InteractionFormDetail.as_view(),
+        name='interaction_form_detail'
     ),
 
     # Admin
