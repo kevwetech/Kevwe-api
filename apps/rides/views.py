@@ -9,6 +9,7 @@ from apps.drivers.models import DriverProfile
 from .utils import calculate_ride_fare, find_available_driver
 from apps.common.email import send_ride_confirmation_email
 from apps.common.ratelimit import AuthRateThrottle
+from apps.idempotency.mixins import IdempotencyMixin
 from .models import (
     Ride, RideVehicleType, RideTracking,
     TransportVehicle, TransportRoute, TransportStop,
@@ -214,7 +215,7 @@ class EstimateFareView(APIView):
         )
 
 
-class RequestRideView(APIView):
+class RequestRideView(IdempotencyMixin, APIView):
     """Request a new ride"""
     permission_classes = [IsAuthenticated]
     throttle_classes = [AuthRateThrottle]
@@ -902,7 +903,7 @@ class TransportScheduleDetailView(APIView):
 
 
 # ── Book transport ────────────────────────────────
-class BookTransportView(APIView):
+class BookTransportView(IdempotencyMixin, APIView):
     """
     POST /api/v1/transport/book/
     Body: { schedule_id, passengers: [{name, phone, seat_class, seat_id}], payment_method }

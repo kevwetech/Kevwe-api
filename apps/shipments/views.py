@@ -17,6 +17,7 @@ from apps.drivers.utils import calculate_distance
 from apps.common.utils import generate_reference
 from apps.wallet.utils import get_or_create_wallet
 from apps.common.email import send_shipment_confirmation_email
+from apps.idempotency.mixins import IdempotencyMixin
 from .models import (
     Shipment, 
     ShipmentTracking, 
@@ -239,7 +240,7 @@ class ShipmentServiceCategoryDetailView(APIView):
             http_status=status.HTTP_204_NO_CONTENT)
 
 
-class ShipmentListCreateView(APIView):
+class ShipmentListCreateView(IdempotencyMixin, APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):

@@ -4,11 +4,21 @@ from .models import (
     AppointmentBlock, AppointmentAvailabilityException,
     Appointment, AppointmentTracking, AppointmentPayment,
     AppointmentRating, AppointmentWaitlist, AppointmentReminder,
+    AppointmentCategory, AppointmentCustomField
 )
+
+
+class AppointmentCustomFieldSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AppointmentCustomField
+        fields = ['id', 'label', 'field_type', 'options', 'is_required', 'order']
 
 
 class AppointmentServiceSerializer(serializers.ModelSerializer):
     total_duration_minutes = serializers.IntegerField(read_only=True)
+    category_name = serializers.CharField(source='category.name', read_only=True, default=None)
+    custom_fields = AppointmentCustomFieldSerializer(many=True, read_only=True)   # ← add
+
 
     class Meta:
         model = AppointmentService

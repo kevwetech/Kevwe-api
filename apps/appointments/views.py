@@ -5,7 +5,7 @@ from django.utils import timezone
 from django.db import transaction, models
 from datetime import datetime, timedelta
 import uuid
-
+from apps.idempotency.mixins import IdempotencyMixin
 from apps.common.views import api_response
 from apps.common.permissions import IsAdmin
 
@@ -250,7 +250,7 @@ class AppointmentAvailabilityView(APIView):
 
 
 # ── Book appointment ──────────────────────────────
-class BookAppointmentView(APIView):
+class BookAppointmentView(IdempotencyMixin, APIView):
     """
     POST /api/v1/appointments/book/
     """

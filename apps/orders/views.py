@@ -7,6 +7,7 @@ from apps.common.permissions import IsAdmin, IsVendor
 from apps.common.utils import generate_reference, generate_order_number
 from .models import Cart, CartItem, Order, OrderItem, OrderTracking
 from apps.wallet.views import get_or_create_vendor_wallet
+from apps.idempotency.mixins import IdempotencyMixin
 from apps.commissions.utils import get_commission_rule
 from .serializers import (
     CartSerializer,
@@ -270,7 +271,7 @@ class UpdateCartItemView(APIView):
 
 # ─── Order Views ──────────────────────────────────
 
-class OrderListCreateView(APIView):
+class OrderListCreateView(IdempotencyMixin, APIView):
     """List user orders and create new order"""
     permission_classes = [IsAuthenticated]
 
@@ -333,10 +334,11 @@ class OrderListCreateView(APIView):
             business = cart.business
 
             # Check min order amount
-            if cart.total < business.min_order_amount:
+            min_order = business.order_settings.min_order_amount if hasattr(business, 'order_settings') else 0
+            if cart.total < min_order:
                 return api_response(
                     'error',
-                    f'Minimum order amount is ₦{business.min_order_amount}. Your cart total is ₦{cart.total}',
+                    f'Minimum order amount is ₦{min_order}. Your cart total is ₦{cart.total}',
                     http_status=status.HTTP_400_BAD_REQUEST
                 )
 
@@ -382,7 +384,7 @@ class OrderListCreateView(APIView):
                     ).first()
 
             # Calculate delivery fee
-            delivery_fee = business.delivery_fee
+            delivery_fee = business.order_settings.delivery_fee if hasattr(business, 'order_settings') else 0
             if delivery_zone:
                 delivery_fee = (
                     delivery_fee *
@@ -409,7 +411,8 @@ class OrderListCreateView(APIView):
                 delivery_zone=delivery_zone,
                 delivery_fee=delivery_fee,
                 estimated_delivery_time=(
-                    business.delivery_time_minutes
+                    business.order_settings.estimated_delivery_minutes
+                    if hasattr(business, 'order_settings') else 30
                 ),
                 scheduled_time=data.get('scheduled_time'),
                 special_instructions=data.get(
@@ -508,9 +511,8 @@ class OrderListCreateView(APIView):
             )
 
             # Update business stats
-            business.total_orders += 1
-            business.total_revenue += order.subtotal
-            business.save()
+            # Business order/revenue stats are derived from the
+            # orders relation, not stored counters — nothing to update here.
 
             # Update product stats
             for item in order.items.all():

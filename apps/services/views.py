@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from apps.common.views import api_response
 from apps.common.permissions import IsAdmin
 from django.utils import timezone
+from apps.idempotency.mixins import IdempotencyMixin
 from .models import (
     ServiceCategory, Service, ServiceProvider,
     ServiceProviderAvailability, ProviderSkill,
@@ -577,7 +578,7 @@ class ProviderVehicleView(APIView):
 
 # ── Service Requests ─────────────────────────────────────
 
-class ServiceRequestListCreateView(APIView):
+class ServiceRequestListCreateView(IdempotencyMixin, APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):

@@ -5,6 +5,7 @@ from django.utils import timezone
 from apps.common.views import api_response
 from apps.common.permissions import IsAdmin
 from apps.common.utils import generate_reference
+from apps.idempotency.mixins import IdempotencyMixin
 from .models import (
     BookableItem,
     BookableItemAvailability,
@@ -620,7 +621,7 @@ class GetAvailableSlotsView(APIView):
 
 # ─── Booking Views ────────────────────────────────
 
-class BookingListCreateView(APIView):
+class BookingListCreateView(IdempotencyMixin, APIView):
     """List and create bookings"""
     permission_classes = [IsAuthenticated]
 

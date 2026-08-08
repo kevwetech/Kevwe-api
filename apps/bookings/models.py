@@ -398,10 +398,11 @@ class Booking(TimeStampedModel):
         blank=True,
         null=True
     )  # passport, NIN, drivers license
-    guest_id_number = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True
+    guest_id_number = models.ImageField(
+        upload_to='bookings/guest_ids/',
+        null=True, blank=True,
+        help_text="Photo or scan of the guest's ID document — required "
+                  "only when BookingSettings.requires_guest_kyc is set."
     )
 
     # Pricing

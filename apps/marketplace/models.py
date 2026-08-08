@@ -3,6 +3,7 @@ from django.conf import settings
 from apps.common.models import TimeStampedModel
 
 
+
 class Industry(TimeStampedModel):
     """
     Top-level industry grouping.
@@ -14,16 +15,17 @@ class Industry(TimeStampedModel):
         ('coming_soon', 'Coming Soon'),
         ('inactive', 'Inactive'),
     )
-    INTERACTION_TYPE_CHOICES = (
+    INTERACTION_TYPE_CHOICES = [
         ('orders',             'Orders (delivery/pickup)'),
         ('bookings',           'Bookings (hotels/apartments)'),
         ('services',           'Service Requests (quote-based)'),
         ('appointments',       'Appointments (fixed time slots)'),
         ('scheduled_services', 'Scheduled Services (provider visits customer)'),
-        ('rides',              'Rides (transport)'),
+        ('rides',              'Rides (on-demand hailing)'),
+        ('transport',          'Transport (scheduled routes & seats)'),   # NEW
+        ('shipments',          'Shipments (package delivery)'),           # NEW
         ('mixed',              'Mixed'),
-    )
-
+    ]
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(unique=True)
     description = models.TextField(blank=True, null=True)
@@ -68,39 +70,65 @@ class Industry(TimeStampedModel):
         return self.name
 
 
+
 class BusinessCategory(TimeStampedModel):
-    industry = models.ForeignKey(
-        Industry,
-        on_delete=models.CASCADE,
-        related_name='categories'
-    )
+    industry = models.ForeignKey(Industry, on_delete=models.CASCADE, related_name='categories')
     name = models.CharField(max_length=100)
     slug = models.SlugField()
     description = models.TextField(blank=True, null=True)
-    icon = models.CharField(
-        max_length=100, blank=True, null=True
-    )
-    image = models.ImageField(
-        upload_to='marketplace/categories/',
-        null=True, blank=True
-    )
-    # Matches existing DB column name
-    interaction_type = models.CharField(
-        max_length=20,
-        choices=Industry.INTERACTION_TYPE_CHOICES,
-        blank=True, null=True,
-        help_text='Override industry interaction type'
-    )
-    platform_commission = models.DecimalField(
-        max_digits=5, decimal_places=2,
-        null=True, blank=True
-    )
-    has_order_settings = models.BooleanField(default=False)
-    has_booking_settings = models.BooleanField(default=False)
-    has_service_settings = models.BooleanField(default=False)
+    icon = models.CharField(max_length=100, blank=True, null=True)
+    image = models.ImageField(upload_to='marketplace/categories/', null=True, blank=True)
+    platform_commission = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     requires_certification = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     order = models.IntegerField(default=0)
+    
+
+    interaction_type = models.CharField(
+        max_length=32, choices=Industry.INTERACTION_TYPE_CHOICES,
+        null=True, blank=True,
+        verbose_name='Primary interaction',
+        help_text='The DEFAULT experience — first tab and main CTA. '
+                  'Blank inherits the industry default. This is not the '
+                  'only capability; tick everything offered below.',
+    )
+
+    # ── Enabled interactions ──
+    has_order_settings = models.BooleanField(
+        default=False, verbose_name='Orders',
+        help_text='Delivery / pickup of products')
+    has_booking_settings = models.BooleanField(
+        default=False, verbose_name='Bookings',
+        help_text='Rooms, tables, halls — reserving time and space')
+    has_appointment_settings = models.BooleanField(
+        default=False, verbose_name='Appointments',
+        help_text='Fixed time slots with a staff member')
+    has_service_settings = models.BooleanField(
+        default=False, verbose_name='Services',
+        help_text='Quote-based service requests')
+    has_scheduled_service_settings = models.BooleanField(
+        default=False, verbose_name='Scheduled services',
+        help_text='Provider travels to the customer')
+    has_ride_settings = models.BooleanField(
+        default=False, verbose_name='Rides',
+        help_text='On-demand vehicle hailing')
+    has_transport_settings = models.BooleanField(
+        default=False, verbose_name='Transport',
+        help_text='Scheduled routes and seat booking')
+    has_shipment_settings = models.BooleanField(
+        default=False, verbose_name='Shipments',
+        help_text='Package delivery and tracking')
+
+    INTERACTION_FLAGS = {
+        'orders':             'has_order_settings',
+        'bookings':           'has_booking_settings',
+        'appointments':       'has_appointment_settings',
+        'services':           'has_service_settings',
+        'scheduled_services': 'has_scheduled_service_settings',
+        'rides':              'has_ride_settings',
+        'transport':          'has_transport_settings',
+        'shipments':          'has_shipment_settings',
+    }
 
     class Meta:
         ordering = ['order', 'name']
@@ -112,10 +140,32 @@ class BusinessCategory(TimeStampedModel):
 
     @property
     def effective_interaction_type(self):
-        return (
-            self.interaction_type
-            or self.industry.default_interaction_type
-        )
+        """Explicit primary, else the industry's default."""
+        return self.interaction_type or self.industry.default_interaction_type
+
+    @property
+    def enabled_interactions(self):
+        """Capabilities this category permits — primary first."""
+        types = [t for t, flag in self.INTERACTION_FLAGS.items()
+                 if getattr(self, flag, False)]
+        primary = self.effective_interaction_type
+        if primary and primary != 'mixed':
+            if primary in types:
+                types.remove(primary)
+            types.insert(0, primary)
+        return types
+
+    def clean(self):
+        """Primary must be one of the enabled capabilities."""
+        from django.core.exceptions import ValidationError
+        primary = self.interaction_type
+        if primary and primary != 'mixed':
+            flag = self.INTERACTION_FLAGS.get(primary)
+            if flag and not getattr(self, flag, False):
+                raise ValidationError({'interaction_type':
+                    f'"{primary}" is set as primary but is not ticked under '
+                    f'Enabled interactions.'})
+
 
 
 class Business(TimeStampedModel):
@@ -133,6 +183,13 @@ class Business(TimeStampedModel):
         ('rejected', 'Rejected'),
         ('closed', 'Closed Permanently'),
     )
+    CREDENTIAL_BADGES = {
+        'cac_certificate':  'CAC Registered',
+        'business_license': 'Licensed Business',
+        'tax_clearance':    'Tax Cleared',
+        'tin_certificate':  'Tax Registered',
+        'director_id':      'ID Verified',
+    }
 
     # ── Ownership ──────────────────────────────────────
     owner = models.ForeignKey(
@@ -161,6 +218,20 @@ class Business(TimeStampedModel):
     description = models.TextField(blank=True, null=True)
     tagline = models.CharField(
         max_length=255, blank=True, null=True
+    )
+    story = models.TextField(
+        blank=True, null=True,
+        help_text="The business's own account of itself — how it started, "
+                  "what it does. Shown on the About tab.")
+    mission = models.TextField(
+        blank=True, null=True,
+        help_text='What the business is trying to do. Optional.'
+    )
+    services_overview = models.TextField(
+        blank=True, null=True,
+        help_text="For service-type businesses — what you do and how you "
+                  "work. Shown on the About tab. E.g. a mechanic's specialties, "
+                  "a salon's approach, a cleaner's process."
     )
 
     # ── Media ─────────────────────────────────────────
@@ -277,22 +348,55 @@ class Business(TimeStampedModel):
     def __str__(self):
         return f"{self.name} ({self.industry.name})"
 
+
     @property
     def interaction_type(self):
         if self.category:
             return self.category.effective_interaction_type
         return self.industry.default_interaction_type
 
+    @property
+    def interaction_types(self):
+        """Capabilities this business operates: what the category
+        permits, narrowed to what's actually configured."""
+        permitted = self.category.enabled_interactions if self.category else []
+        primary = self.interaction_type
+        if not permitted:
+            return [primary] if primary else []
+
+        SETTINGS_ATTR = {
+            'orders':             'order_settings',
+            'bookings':           'booking_settings',
+            'appointments':       'appointment_settings',
+            'services':           'service_settings',
+            'scheduled_services': 'service_settings',   # shared with services
+            'rides':              'ride_settings',
+            'transport':          'ride_settings',      # shared with rides
+            'shipments':          'shipment_settings',
+        }
+
+        active = []
+        for t in permitted:
+            attr = SETTINGS_ATTR.get(t)
+            if attr is None or hasattr(self, attr):
+                active.append(t)
+
+        if primary and primary not in active:
+            active.insert(0, primary)      # primary always renders
+        return active
 
     @property
     def commission_rate(self):
         """Effective commission — business > category > industry."""
-        if self.custom_commission:
+        if self.custom_commission is not None:
             return self.custom_commission
-        if self.category:
-            return self.category.effective_commission
-        return self.industry.platform_commission
+        if self.category and self.category.platform_commission is not None:
+            return self.category.platform_commission
+        if self.industry and self.industry.platform_commission is not None:
+            return self.industry.platform_commission
+        return 0
 
+        
     @property
     def accepts_orders(self):
         return self.interaction_type == 'orders'
@@ -304,17 +408,218 @@ class Business(TimeStampedModel):
     @property
     def accepts_service_requests(self):
         return self.interaction_type == 'services'
+    
+    @property
+    def verified_badges(self):
+        """Credential chips, derived entirely from approved KYC —
+        never typed by the business owner. business_kyc must ALSO be
+        approved (not just the individual document) so a business
+        mid-review with one lucky approved doc doesn't show a badge."""
+        from apps.kyc.models import BusinessKYCDocument
+        doc_types = set(BusinessKYCDocument.objects.filter(
+            business_kyc__business_id=self.id,
+            business_kyc__status='approved',
+            status='approved',
+        ).values_list('document_type', flat=True))
+
+        badges = [
+            {'type': t, 'label': label}
+            for t, label in self.CREDENTIAL_BADGES.items() if t in doc_types
+        ]
+        # CAC/license make "ID Verified" redundant noise
+        if any(b['type'] in ('cac_certificate', 'business_license') for b in badges):
+            badges = [b for b in badges if b['type'] != 'director_id']
+        return badges
+
+    @property
+    def interaction_forms(self):
+        """{ 'bookings': { 'form_key': 'hotel_booking', 'page_url': 'hotel-booking.html' }, ... }
+        Falls back silently when nothing's configured — renderers
+        default to today's page names, so this ships with zero
+        business-breaking risk before any InteractionForm rows exist."""
+        out = {}
+        for t in self.interaction_types:
+            row = InteractionForm.resolve(t, self)
+            if row:
+                out[t] = {'form_key': row.form_key, 'page_url': row.page_url}
+        return out
+
+
+class BusinessFAQ(TimeStampedModel):
+    """Questions a business answers about itself.
+
+    Distinct from cms.FAQ, which answers questions about Kevwe.
+    "Do you allow pets?" is this. "How do I sign up?" is cms.FAQ.
+    """
+    business = models.ForeignKey(
+        'Business', on_delete=models.CASCADE, related_name='faqs')
+    question = models.CharField(max_length=200)
+    answer = models.TextField()
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+        verbose_name = 'Business FAQ'
+        verbose_name_plural = 'Business FAQs'
+
+    def __str__(self):
+        return f'{self.business.name} — {self.question[:60]}'
+
+
+class BusinessPromotion(TimeStampedModel):
+    """Something a business wants pinned above its catalog.
+
+    Offers and notices are merged deliberately: both render as the
+    same strip and differ only in whether money is attached.
+    "20% off this weekend" is an OFFER; "Closed Dec 25" is a NOTICE.
+    Two near-identical tables would drift.
+    """
+    KIND_OFFER  = 'offer'
+    KIND_NOTICE = 'notice'
+    KIND_CHOICES = [
+        (KIND_OFFER,  'Offer — a deal, discount or bonus'),
+        (KIND_NOTICE, 'Notice — an announcement with no offer attached'),
+    ]
+
+    business = models.ForeignKey(
+        'Business', on_delete=models.CASCADE, related_name='page_promotions')
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default=KIND_OFFER)
+
+    title = models.CharField(
+        max_length=80,
+        help_text='Short and scannable — "20% off this weekend", "Free delivery"')
+    description = models.TextField(blank=True, null=True)
+    icon = models.CharField(
+        max_length=8, blank=True, null=True,
+        help_text='Emoji shown on the strip')
+    image = models.ImageField(
+        upload_to='marketplace/promotions/', blank=True, null=True)
+
+    # Time bounds are not optional in spirit: a weekend promo still
+    # showing in March is worse than no promo at all. Filtered
+    # server-side in the queryset, never trusted to the client.
+    starts_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Blank = live immediately')
+    ends_at = models.DateTimeField(
+        null=True, blank=True,
+        help_text='Blank = runs until switched off. Set this.')
+
+    cta_label = models.CharField(
+        max_length=40, blank=True, null=True,
+        help_text='Optional button text — "Order now", "See rooms"')
+    cta_url = models.CharField(
+        max_length=300, blank=True, null=True,
+        help_text='Where the button goes. Relative paths allowed.')
+
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['order', '-created_at']
+        verbose_name = 'Business promotion'
+        verbose_name_plural = 'Business promotions'
+
+    def __str__(self):
+        return f'{self.business.name} — {self.title}'
+
+    @property
+    def is_live(self):
+        from django.utils import timezone
+        now = timezone.now()
+        if not self.is_active:
+            return False
+        if self.starts_at and self.starts_at > now:
+            return False
+        if self.ends_at and self.ends_at < now:
+            return False
+        return True
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValidationError({'ends_at': 'Must be after the start.'})
+
+
+class BusinessPolicy(TimeStampedModel):
+    """House rules — refunds, cancellation, check-in.
+
+    These are the business's own terms, published immediately. They
+    are not verified claims and carry no badge. Escrow dispute terms
+    surface here too.
+    """
+    TYPE_CHOICES = [
+        ('cancellation', 'Cancellation'),
+        ('refund',       'Refund'),
+        ('checkin',      'Check-in / Check-out'),
+        ('delivery',     'Delivery'),
+        ('warranty',     'Warranty'),
+        ('house_rules',  'House rules'),
+        ('privacy',      'Privacy'),
+        ('other',        'Other'),
+    ]
+
+    business = models.ForeignKey(
+        'Business', on_delete=models.CASCADE, related_name='policies')
+    policy_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='other')
+    title = models.CharField(
+        max_length=100,
+        help_text='Blank-ish titles help nobody — "Free cancellation up to 24h"')
+    content = models.TextField()
+    icon = models.CharField(max_length=8, blank=True, null=True)
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+        verbose_name = 'Business policy'
+        verbose_name_plural = 'Business policies'
+
+    def __str__(self):
+        return f'{self.business.name} — {self.title}'
+
+
+class BusinessContentBlock(TimeStampedModel):
+    """The single escape hatch.
+
+    Everything a business commonly needs has a structured model, so
+    the page stays predictable across industries. This exists for the
+    genuinely unusual — and stays one flat title+content pair on
+    purpose. The moment it grows a `block_type` enum, every business
+    page becomes a different shape and the marketplace loses the
+    consistency that makes it navigable.
+    """
+    business = models.ForeignKey(
+        'Business', on_delete=models.CASCADE, related_name='content_blocks')
+    title = models.CharField(max_length=120)
+    content = models.TextField()
+    image = models.ImageField(
+        upload_to='marketplace/blocks/', blank=True, null=True)
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+        verbose_name = 'Business content block'
+        verbose_name_plural = 'Business content blocks'
+
+    def __str__(self):
+        return f'{self.business.name} — {self.title}'
+
 
 class BusinessSubtype(models.Model):
-    INTERACTION_TYPE_CHOICES = (
+    INTERACTION_TYPE_CHOICES = [
         ('orders',             'Orders (delivery/pickup)'),
         ('bookings',           'Bookings (hotels/apartments)'),
         ('services',           'Service Requests (quote-based)'),
         ('appointments',       'Appointments (fixed time slots)'),
         ('scheduled_services', 'Scheduled Services (provider visits customer)'),
-        ('rides',              'Rides (transport)'),
+        ('rides',              'Rides (on-demand hailing)'),
+        ('transport',          'Transport (scheduled routes & seats)'),
+        ('shipments',          'Shipments (package delivery)'),
         ('mixed',              'Mixed'),
-    )
+    ]
     interaction_type = models.CharField(
         max_length=30,
         choices=INTERACTION_TYPE_CHOICES,
@@ -980,3 +1285,61 @@ class ShipmentSettings(TimeStampedModel):
     def __str__(self):
         return f"Shipment Settings — {self.business.name}"
 
+
+
+
+class InteractionForm(TimeStampedModel):
+    """Which dedicated page handles a business's workflow for a
+    given interaction type, plus the field contract that page must
+    satisfy — used for server-side validation, not rendering.
+    Hotels get hotel-booking.html; car rentals get
+    rental-booking.html; both create a Booking through the same
+    engine underneath."""
+
+    interaction_type = models.CharField(max_length=32, choices=Industry.INTERACTION_TYPE_CHOICES)
+
+    industry = models.ForeignKey(Industry, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='interaction_forms')
+    category = models.ForeignKey(BusinessCategory, on_delete=models.CASCADE, null=True, blank=True,
+        related_name='interaction_forms')
+    business = models.ForeignKey('Business', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='interaction_forms')
+
+    form_key = models.SlugField(max_length=60, unique=True,
+        help_text='hotel_booking, rental_booking, salon_appointment...')
+    name = models.CharField(max_length=100)
+
+    # The page the business page's CTA routes to for this workflow.
+    page_url = models.CharField(max_length=200,
+        help_text='e.g. hotel-booking.html, rental-booking.html')
+
+    # Field contract — validation only. The dedicated page's own
+    # markup is the actual UI; this just tells the backend what
+    # a valid submission looks like.
+    schema = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['interaction_type', 'form_key']
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        scopes = [bool(self.industry_id), bool(self.category_id), bool(self.business_id)]
+        if sum(scopes) != 1:
+            raise ValidationError('Set exactly one of industry, category or business.')
+
+    @classmethod
+    def resolve(cls, interaction_type, business):
+        """Same precedence as InteractionVocabulary — business wins,
+        then category, then industry."""
+        rows = list(cls.objects.filter(interaction_type=interaction_type).filter(
+            models.Q(business_id=business.id)
+            | models.Q(category_id=business.category_id)
+            | models.Q(industry_id=business.industry_id)
+        ))
+        for r in rows:
+            if r.business_id == business.id: return r
+        for r in rows:
+            if r.category_id and r.category_id == business.category_id: return r
+        for r in rows:
+            if r.industry_id and r.industry_id == business.industry_id: return r
+        return None

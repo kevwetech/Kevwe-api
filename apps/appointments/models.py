@@ -5,6 +5,32 @@ from apps.common.models import TimeStampedModel
 import uuid
 
 
+class AppointmentCategory(models.Model):
+    business = models.ForeignKey(
+        'marketplace.Business',
+        on_delete=models.CASCADE,
+        related_name='appointment_categories'
+    )
+    name = models.CharField(max_length=100)
+    slug = models.SlugField(max_length=120, blank=True)
+    description = models.TextField(blank=True, null=True)
+    icon = models.CharField(max_length=8, blank=True, null=True)   # emoji
+    image = models.ImageField(upload_to='appointments/categories/', blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'name']
+        unique_together = [('business', 'name')]
+        verbose_name_plural = 'Appointment categories'
+
+    def __str__(self):
+        return f'{self.business.name} — {self.name}'
+
+
+
 class AppointmentService(TimeStampedModel):
     """
     A specific service offered by a business.
@@ -15,6 +41,13 @@ class AppointmentService(TimeStampedModel):
         on_delete=models.CASCADE,
         related_name='appointment_services',
     )
+    category = models.ForeignKey(
+        AppointmentCategory,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='services'
+    )
+    
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     duration_minutes = models.IntegerField(
@@ -72,6 +105,42 @@ class AppointmentService(TimeStampedModel):
             self.duration_minutes +
             self.buffer_after_minutes
         )
+
+
+
+
+class AppointmentCustomField(TimeStampedModel):
+    """A question a specific service asks, not the whole business.
+    Bridal makeup asks for wedding date + venue; a haircut on the
+    same salon doesn't — scoping to the service (not the business)
+    is what keeps each customer's form relevant to what they picked."""
+
+    FIELD_TYPES = [
+        ('text',     'Text'),
+        ('number',   'Number'),
+        ('dropdown', 'Dropdown'),
+        ('checkbox', 'Checkbox'),
+        ('date',     'Date'),
+        ('file',     'File upload'),
+    ]
+
+    service = models.ForeignKey(
+        'AppointmentService', on_delete=models.CASCADE,
+        related_name='custom_fields')
+    label = models.CharField(max_length=150)
+    field_type = models.CharField(max_length=20, choices=FIELD_TYPES)
+    options = models.JSONField(
+        blank=True, null=True,
+        help_text='Dropdown choices only, e.g. ["Short", "Medium", "Long"]')
+    is_required = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order', 'id']
+
+    def __str__(self):
+        return f'{self.service.name} — {self.label}'
+
 
 
 class AppointmentStaff(TimeStampedModel):
